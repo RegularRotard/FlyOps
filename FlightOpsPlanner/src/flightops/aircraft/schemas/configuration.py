@@ -6,8 +6,16 @@ applicable approved aircraft documentation.
 """
 
 from enum import StrEnum
+from math import isclose
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from flightops.weight_balance.units import (
+    LengthUnit,
+    MassUnit,
+    convert_length,
+    convert_mass,
+)
 
 
 class ConfigurationStatus(StrEnum):
@@ -24,14 +32,40 @@ class TechnicalDocumentReference(BaseModel):
     title: str = Field(min_length=1)
     revision: str | None = None
 
+class MassMeasurement(BaseModel):
+    """A mass measurement preserving its original units."""
 
+    model_config = ConfigDict(extra="forbid")
+
+    value: float = Field(
+        ge=0,
+        allow_inf_nan=False,
+    )
+
+    unit: MassUnit
+
+
+class ArmMeasurement(BaseModel):
+    """An arm measurement relative to the aircraft datum."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    value: float = Field(
+        allow_inf_nan=False,
+    )
+
+    unit: LengthUnit
 class LoadingStation(BaseModel):
     """An aircraft loading station.
 
     Arms are measured relative to the aircraft's approved datum.
     Negative arms are permitted where applicable.
     """
+    longitudinal_arm: ArmMeasurement | None = None
 
+    lateral_arm: ArmMeasurement | None = None
+
+    maximum_load: MassMeasurement | None = None 
     station_id: str = Field(min_length=1)
     description: str = Field(min_length=1)
 
@@ -50,7 +84,11 @@ class LoadingStation(BaseModel):
 
 class WeightBalanceConfiguration(BaseModel):
     """Aircraft-specific weight-and-balance configuration."""
+    basic_empty_weight: MassMeasurement | None = None
 
+    basic_empty_weight_longitudinal_arm: ArmMeasurement | None = None
+
+    basic_empty_weight_lateral_arm: ArmMeasurement | None = None
     basic_empty_weight_kg: float = Field(
         gt=0,
         allow_inf_nan=False,
@@ -84,6 +122,47 @@ class WeightBalanceConfiguration(BaseModel):
             raise ValueError(
                 "Loading station identifiers must be unique."
             )
+
+        return self
+    @model_validator(mode="after")
+    def validate_source_measurements(self):
+        """Check that source measurements agree with normalized values."""
+
+        if self.basic_empty_weight is not None:
+            converted = convert_mass(
+                self.basic_empty_weight.value,
+                self.basic_empty_weight.unit,
+                MassUnit.KG,
+            )
+
+            if not isclose(
+                converted,
+                self.basic_empty_weight_kg,
+                rel_tol=1e-6,
+                abs_tol=1e-6,
+            ):
+                raise ValueError(
+                    "Basic empty weight source measurement does not "
+                    "match the normalized kilogram value."
+                )
+
+        if self.basic_empty_weight_longitudinal_arm is not None:
+            converted = convert_length(
+                self.basic_empty_weight_longitudinal_arm.value,
+                self.basic_empty_weight_longitudinal_arm.unit,
+                LengthUnit.MM,
+            )
+
+            if not isclose(
+                converted,
+                self.basic_empty_weight_longitudinal_arm_mm,
+                rel_tol=1e-6,
+                abs_tol=1e-6,
+            ):
+                raise ValueError(
+                    "Basic empty weight longitudinal arm source "
+                    "measurement does not match the normalized value."
+                )
 
         return self
 
