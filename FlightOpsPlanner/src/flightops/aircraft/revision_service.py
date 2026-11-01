@@ -3,7 +3,7 @@
 from copy import deepcopy
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from flightops.database.base import utc_now
@@ -13,7 +13,7 @@ from flightops.database.models import (
     AircraftRevisionChange,
 )
 
-
+_UNSPECIFIED = object()
 class AircraftRevisionError(Exception):
     """Raised when an aircraft revision operation is invalid."""
 
@@ -30,7 +30,7 @@ class AircraftRevisionService:
         configuration: dict[str, Any],
         description: str,
         changed_by: str | None = None,
-        expected_revision_id: str | None = None,
+        expected_revision_id: str | None | object = _UNSPECIFIED,
     ) -> AircraftProfileRevision:
         """Create a new revision without modifying historical snapshots."""
 
@@ -48,20 +48,24 @@ class AircraftRevisionService:
         self.session.add(profile)
         self.session.flush()
 
+        # Retrieve the latest existing revision.
         latest = self.session.scalar(
             select(AircraftProfileRevision)
             .where(AircraftProfileRevision.profile_id == profile.id)
             .order_by(AircraftProfileRevision.revision_number.desc())
             .limit(1)
         )
-        if expected_revision_id is not None:
-            current_id = latest.id if latest else None
 
-            if current_id != expected_revision_id:
-                raise AircraftRevisionError(
-                    "Aircraft configuration has changed since it was loaded. "
-                    "Reload the latest revision before saving."
-                )
+        current_id = latest.id if latest else None
+
+        if (
+            expected_revision_id is not _UNSPECIFIED
+            and current_id != expected_revision_id
+        ):
+            raise AircraftRevisionError(
+                "Aircraft configuration has changed since it was loaded. "
+                "Reload the latest revision before saving."
+            )
 
         previous_snapshot = (
             deepcopy(latest.snapshot) if latest else {}
@@ -106,7 +110,33 @@ class AircraftRevisionService:
                 )
             )
 
-        profile.current_revision_id = revision.id
+        # Atomically update the current revision pointer.
+        #
+        # The database will only accept the update if the aircraft
+        # still references the revision we originally loaded.
+
+        statement = (
+            update(AircraftProfile)
+            .where(AircraftProfile.id == profile.id)
+            .where(
+                AircraftProfile.current_revision_id.is_(None)
+                if current_id is None
+                else AircraftProfile.current_revision_id == current_id
+            )
+            .values(current_revision_id=revision.id)
+        )
+
+        result = self.session.execute(statement)
+
+        if result.rowcount != 1:
+            raise AircraftRevisionError(
+                "Aircraft configuration has changed since it was loaded. "
+                "Reload the latest revision before saving."
+            )
+
+        # Keep the ORM object consistent with the database.
+        self.session.expire(profile, ["current_revision_id"])
+
         self.session.flush()
 
         return revision
