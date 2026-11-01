@@ -162,3 +162,28 @@ def test_nested_configuration_changes():
 
     assert len(changes) == 1
     assert changes[0]["field_path"] == "engine.model"
+def test_outdated_revision_rejected(session, aircraft):
+    service = AircraftRevisionService(session)
+
+    first = service.create_revision(
+        aircraft,
+        {"empty_weight_kg": 680},
+        "Initial configuration",
+    )
+
+    service.create_revision(
+        aircraft,
+        {"empty_weight_kg": 683},
+        "Equipment installed",
+        expected_revision_id=first.id,
+    )
+
+    with pytest.raises(AircraftRevisionError, match="changed since"):
+        service.create_revision(
+            aircraft,
+            {"empty_weight_kg": 685},
+            "Outdated configuration",
+            expected_revision_id=first.id,
+        )
+
+    assert len(service.get_history(aircraft.id)) == 2

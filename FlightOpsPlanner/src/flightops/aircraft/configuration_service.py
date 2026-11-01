@@ -36,6 +36,7 @@ class AircraftConfigurationService:
         configuration: dict[str, Any],
         description: str,
         changed_by: str | None = None,
+        expected_revision_id: str | None = None,
     ) -> AircraftProfileRevision:
         """Validate and save a new aircraft configuration revision."""
 
@@ -79,6 +80,7 @@ class AircraftConfigurationService:
             configuration=deepcopy(snapshot),
             description=description,
             changed_by=changed_by,
+            expected_revision_id=expected_revision_id,
         )
 
     def get_current_configuration(

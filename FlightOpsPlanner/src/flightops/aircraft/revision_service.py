@@ -30,6 +30,7 @@ class AircraftRevisionService:
         configuration: dict[str, Any],
         description: str,
         changed_by: str | None = None,
+        expected_revision_id: str | None = None,
     ) -> AircraftProfileRevision:
         """Create a new revision without modifying historical snapshots."""
 
@@ -53,6 +54,14 @@ class AircraftRevisionService:
             .order_by(AircraftProfileRevision.revision_number.desc())
             .limit(1)
         )
+        if expected_revision_id is not None:
+            current_id = latest.id if latest else None
+
+            if current_id != expected_revision_id:
+                raise AircraftRevisionError(
+                    "Aircraft configuration has changed since it was loaded. "
+                    "Reload the latest revision before saving."
+                )
 
         previous_snapshot = (
             deepcopy(latest.snapshot) if latest else {}
