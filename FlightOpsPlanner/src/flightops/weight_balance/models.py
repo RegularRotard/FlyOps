@@ -1,6 +1,7 @@
 """Aircraft weight and balance calculation models."""
 
 from dataclasses import dataclass
+from math import isfinite
 
 
 @dataclass(frozen=True)
@@ -12,10 +13,20 @@ class LoadItem:
     arm_mm: float
 
     def __post_init__(self):
+        if not self.name.strip():
+            raise ValueError("Load name cannot be empty.")
+
+        if not isfinite(self.weight_kg):
+            raise ValueError("Load weight must be finite.")
+
         if self.weight_kg < 0:
-            raise ValueError(
-                f"Load '{self.name}' cannot have negative weight."
-            )
+            raise ValueError("Load weight cannot be negative.")
+
+        if not isfinite(self.arm_mm):
+            raise ValueError("Load arm must be finite.")
+
+        if not isfinite(self.weight_kg * self.arm_mm):
+            raise ValueError("Load moment must be finite.")
 
     @property
     def moment_kg_mm(self) -> float:
