@@ -95,3 +95,84 @@ Each variant must support configurable:
 - Performance calculations.
 - Version-controlled weight and balance data.
 - Aircraft utilisation and maintenance records.
+
+## 8. External Load Operations
+
+The application architecture must support future external-load operations.
+
+Supported load types:
+- Sling loads
+- Longline operations
+- Underslung cargo
+- Cargo nets
+
+The system must accommodate:
+- External load weights
+- Sling and equipment weights
+- Attachment configurations
+- Aircraft-specific limitations
+- Approved performance data
+- Load configuration records
+
+External-load calculations will be developed as a separate module.
+
+## 9. Engine Configurations and Modifications
+
+Aircraft variants must support different approved engine
+configurations where applicable.
+
+Individual aircraft profiles must record:
+- Installed engine model
+- Engine serial number
+- Approved modifications
+- Installed equipment
+- Applicable flight manual supplements
+- Configuration references
+
+Configuration changes must trigger appropriate validation.
+
+## 10. Aircraft Profile Version Control
+
+Every aircraft profile must maintain a revision history.
+
+Each revision must record:
+- Revision number
+- Timestamp
+- Changed fields
+- Previous values
+- New values
+- Change description
+- Reason for change
+
+Required functionality:
+- View revision history
+- Compare revisions
+- Restore previous revisions
+- Preserve historical revisions
+- Create a new revision when restoring an old revision
+
+Historical flight records must retain the exact aircraft
+configuration and technical data used during that flight.
+
+Aircraft profile changes must never silently alter
+previously completed flight records.
+
+Revision history should be implemented using database
+snapshots and change records.
+
+## 11. Authentication and Permissions
+
+Authentication and role-based permissions are explicitly
+excluded from the initial development scope.
+
+The initial application will operate without:
+- User login
+- User accounts
+- Administrator roles
+- Permission restrictions
+- Role-based access control
+
+Change history and data integrity remain mandatory.
+
+The architecture should allow authentication and permissions
+to be introduced in a future development phase.
