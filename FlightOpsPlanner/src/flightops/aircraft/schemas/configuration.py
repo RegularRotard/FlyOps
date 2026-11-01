@@ -128,3 +128,17 @@ class AircraftConfiguration(BaseModel):
             )
 
         return self
+def validate_aircraft_configuration(
+    configuration: dict,
+) -> AircraftConfiguration:
+    """Validate an aircraft configuration without granting approval."""
+
+    validated = AircraftConfiguration.model_validate(configuration)
+
+    if validated.status == ConfigurationStatus.OPERATIONALLY_VERIFIED:
+        raise ValueError(
+            "Operational verification cannot be assigned through "
+            "the configuration validation service."
+        )
+
+    return validated
