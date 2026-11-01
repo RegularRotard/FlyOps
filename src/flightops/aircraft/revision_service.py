@@ -172,6 +172,9 @@ class AircraftRevisionService:
         for key in keys:
             field_path = f"{prefix}.{key}" if prefix else key
 
+            old_exists = key in old
+            new_exists = key in new
+
             old_value = old.get(key)
             new_value = new.get(key)
 
@@ -187,7 +190,7 @@ class AircraftRevisionService:
                     )
                 )
 
-            elif old_value != new_value:
+            elif old_exists != new_exists or old_value != new_value:
                 changes.append(
                     {
                         "field_path": field_path,
