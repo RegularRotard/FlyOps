@@ -23,9 +23,15 @@ SessionLocal = sessionmaker(
 
 
 def initialise_database() -> None:
+    """Create database tables and install revision protection triggers."""
+    from flightops.database.immutability import install_immutability_triggers
+
     DATABASE_DIRECTORY.mkdir(parents=True, exist_ok=True)
+
     Base.metadata.create_all(bind=engine)
 
+    with engine.begin() as connection:
+        install_immutability_triggers(connection)
 
 def get_session():
     return SessionLocal()
