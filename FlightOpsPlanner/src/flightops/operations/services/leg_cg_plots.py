@@ -28,11 +28,14 @@ from flightops.weight_balance.plot_data import (
 
 @dataclass(frozen=True)
 class LegCGPlotResult:
-    """Graph data associated with one specific flight leg."""
+    """Graph data associated with one flight leg."""
 
     leg_id: str
     sequence_number: int
     plot: CGPlotData
+
+    departure_location_id: str | None = None
+    destination_location_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -159,6 +162,8 @@ def build_operation_cg_plots(
                 leg_id=leg.leg_id,
                 sequence_number=leg.sequence_number,
                 plot=plot,
+                departure_location_id=leg.departure_location_id,
+                destination_location_id=leg.destination_location_id,
             )
         )
 

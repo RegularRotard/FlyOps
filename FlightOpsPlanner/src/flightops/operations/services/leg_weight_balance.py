@@ -44,6 +44,8 @@ class LegWeightBalanceResult:
     zero_fuel: RevisionBoundWBResult
     departure: RevisionBoundWBResult
     arrival: RevisionBoundWBResult
+    departure_location_id: str = ""
+    destination_location_id: str = ""
 
     @property
     def departure_weight_kg(self) -> float:
@@ -206,6 +208,8 @@ def calculate_leg_weight_balance(
         zero_fuel=zero_fuel,
         departure=departure,
         arrival=arrival,
+        departure_location_id=leg.departure.location_id,
+        destination_location_id=leg.destination.location_id,
     )
 
 
