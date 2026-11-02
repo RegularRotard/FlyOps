@@ -18,6 +18,11 @@ from flightops.operations.schemas.flight import (
     FlightOperation,
     LegLoadCategory,
 )
+from flightops.operations.services.fuel_continuity import (
+    FuelContinuityResult,
+    RefuelEvent,
+    validate_fuel_continuity,
+)
 from flightops.weight_balance.configuration_adapter import (
     ConfigurationAdapterError,
     WBLoadAssignment,
@@ -55,12 +60,15 @@ class LegWeightBalanceResult:
 
 @dataclass(frozen=True)
 class OperationWeightBalanceResult:
-    """Weight-and-balance results for an entire operation."""
+    """Integrated loading and fuel-continuity assessment."""
 
     operation_id: str
     aircraft_profile_id: str
     configuration_revision_id: str
+
     legs: tuple[LegWeightBalanceResult, ...]
+
+    fuel_continuity: FuelContinuityResult
 
 
 def _configuration_from_revision(revision):
@@ -205,8 +213,16 @@ def calculate_operation_weight_balance(
     operation: FlightOperation,
     revision: AircraftProfileRevision,
     aircraft: AircraftProfile,
+    *,
+    refuel_events: tuple[RefuelEvent, ...] = (),
 ) -> OperationWeightBalanceResult:
-    """Calculate loading conditions for every leg in an operation."""
+    """Assess fuel continuity before calculating per-leg W&B.
+
+    A returned result means the modelled fuel quantities reconcile.
+    Individual loading conditions may still fail their W&B checks.
+
+    This is not an operational flight approval.
+    """
 
     if operation.aircraft_profile_id != aircraft.id:
         raise ConfigurationAdapterError(
@@ -217,6 +233,13 @@ def calculate_operation_weight_balance(
         raise ConfigurationAdapterError(
             "Flight operation references a different configuration revision."
         )
+
+    # Establish fuel continuity before producing an integrated
+    # operation assessment.
+    fuel_continuity = validate_fuel_continuity(
+        operation,
+        refuel_events,
+    )
 
     results = tuple(
         calculate_leg_weight_balance(
@@ -232,4 +255,5 @@ def calculate_operation_weight_balance(
         aircraft_profile_id=aircraft.id,
         configuration_revision_id=revision.id,
         legs=results,
+        fuel_continuity=fuel_continuity,
     )

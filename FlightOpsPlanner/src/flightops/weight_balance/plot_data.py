@@ -72,6 +72,7 @@ class CGPlotData:
 
     zero_fuel_point: CGPlotPoint | None = None
     zero_fuel_assessment: CGPlotLoadingPoint | None = None
+    arrival_assessment: CGPlotLoadingPoint | None = None
 
 
 def build_cg_plot_envelope(

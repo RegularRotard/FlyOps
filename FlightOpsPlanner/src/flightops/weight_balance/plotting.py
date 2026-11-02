@@ -31,6 +31,80 @@ def _format_margin(value: float | None, unit: str) -> str:
     return f"{value:.2f} {unit}"
 
 
+def _add_arrival_assessment(
+    figure: go.Figure,
+    data: CGPlotData,
+) -> None:
+    """Add the independently assessed arrival loading condition."""
+
+    arrival = data.arrival_assessment
+
+    if arrival is None:
+        return
+
+    if not data.loading_points:
+        raise ValueError("An arrival assessment requires a departure loading point.")
+
+    departure = data.loading_points[0]
+
+    # This joins the calculated endpoints. It is not a certified
+    # continuous fuel-consumption CG trajectory.
+    figure.add_trace(
+        go.Scatter(
+            x=[
+                departure.point.cg_mm,
+                arrival.point.cg_mm,
+            ],
+            y=[
+                departure.point.weight_kg,
+                arrival.point.weight_kg,
+            ],
+            mode="lines",
+            name="Planned fuel-burn endpoint trend",
+            line={
+                "color": "#0d6efd",
+                "width": 2,
+                "dash": "dash",
+            },
+            hoverinfo="skip",
+        )
+    )
+
+    status = STATUS_LABELS[arrival.status]
+
+    hover_lines = [
+        "<b>Arrival Weight</b>",
+        f"Status: {status}",
+        f"Weight: {arrival.point.weight_kg:.2f} kg",
+        f"CG: {arrival.point.cg_mm:.2f} mm",
+        ("Weight margin: " + _format_margin(arrival.weight_margin_kg, "kg")),
+        ("Forward CG margin: " + _format_margin(arrival.forward_margin_mm, "mm")),
+        ("Aft CG margin: " + _format_margin(arrival.aft_margin_mm, "mm")),
+        *arrival.findings,
+    ]
+
+    figure.add_trace(
+        go.Scatter(
+            x=[arrival.point.cg_mm],
+            y=[arrival.point.weight_kg],
+            mode="markers+text",
+            text=["Arrival"],
+            textposition="top center",
+            marker={
+                "size": 13,
+                "color": "#0d6efd",
+                "symbol": "diamond",
+                "line": {
+                    "color": "#212529",
+                    "width": 1,
+                },
+            },
+            name="Arrival Weight",
+            hovertemplate=("<br>".join(hover_lines) + "<extra></extra>"),
+        )
+    )
+
+
 def create_cg_figure(data: CGPlotData) -> go.Figure:
     """Render validated CG plotting data as an interactive figure."""
 
@@ -210,7 +284,10 @@ def create_cg_figure(data: CGPlotData) -> go.Figure:
                 hovertemplate=hover_text + "<extra></extra>",
             )
         )
-
+    _add_arrival_assessment(
+        figure,
+        data,
+    )
     figure.update_layout(
         title=(
             "Longitudinal CG Envelope"
