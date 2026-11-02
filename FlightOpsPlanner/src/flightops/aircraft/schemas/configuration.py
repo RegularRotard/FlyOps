@@ -72,6 +72,17 @@ def _measurements_match(
     )
 
 
+class LoadingStationCategory(StrEnum):
+    """Classification of aircraft loading stations."""
+
+    CREW = "crew"
+    PASSENGER = "passenger"
+    BAGGAGE = "baggage"
+    CARGO = "cargo"
+    USABLE_FUEL = "usable_fuel"
+    OTHER = "other"
+
+
 class LoadingStation(BaseModel):
     """An aircraft loading station.
 
@@ -80,13 +91,11 @@ class LoadingStation(BaseModel):
     """
 
     longitudinal_arm: ArmMeasurement | None = None
-
     lateral_arm: ArmMeasurement | None = None
-
     maximum_load: MassMeasurement | None = None
     station_id: str = Field(min_length=1)
     description: str = Field(min_length=1)
-
+    category: LoadingStationCategory = LoadingStationCategory.OTHER
     longitudinal_arm_mm: float = Field(allow_inf_nan=False)
     lateral_arm_mm: float | None = Field(
         default=None,
@@ -261,7 +270,7 @@ class WeightBalanceConfiguration(BaseModel):
     """Aircraft-specific weight-and-balance configuration."""
 
     weight_limits: AircraftWeightLimits | None = None
-
+    usable_fuel_classification_reviewed: bool = False
     longitudinal_cg_envelope: LongitudinalCGEnvelope | None = None
     basic_empty_weight: MassMeasurement | None = None
 
