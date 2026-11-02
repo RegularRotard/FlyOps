@@ -55,6 +55,18 @@ class ArmMeasurement(BaseModel):
     )
 
     unit: LengthUnit
+def _measurements_match(
+    source_value: float,
+    normalized_value: float,
+) -> bool:
+    """Compare equivalent measurements within conversion tolerance."""
+
+    return isclose(
+        source_value,
+        normalized_value,
+        rel_tol=1e-9,
+        abs_tol=1e-6,
+    )
 class LoadingStation(BaseModel):
     """An aircraft loading station.
 
@@ -80,6 +92,71 @@ class LoadingStation(BaseModel):
         gt=0,
         allow_inf_nan=False,
     )
+    @model_validator(mode="after")
+    def validate_source_measurements(self):
+        """Verify source-unit measurements match normalized station data."""
+
+        if self.longitudinal_arm is not None:
+            converted = convert_length(
+                self.longitudinal_arm.value,
+                self.longitudinal_arm.unit,
+                LengthUnit.MM,
+            )
+
+            if not _measurements_match(
+                converted,
+                self.longitudinal_arm_mm,
+            ):
+                raise ValueError(
+                    "Station longitudinal arm source measurement "
+                    "does not match normalized value."
+                )
+
+        if self.lateral_arm is not None:
+            if self.lateral_arm_mm is None:
+                raise ValueError(
+                    "A normalized lateral arm is required when "
+                    "a source lateral arm is provided."
+                )
+
+            converted = convert_length(
+                self.lateral_arm.value,
+                self.lateral_arm.unit,
+                LengthUnit.MM,
+            )
+
+            if not _measurements_match(
+                converted,
+                self.lateral_arm_mm,
+            ):
+                raise ValueError(
+                    "Station lateral arm source measurement "
+                    "does not match normalized value."
+                )
+
+        if self.maximum_load is not None:
+            if self.maximum_load_kg is None:
+                raise ValueError(
+                    "A normalized maximum load is required when "
+                    "a source maximum load is provided."
+                )
+
+            converted = convert_mass(
+                self.maximum_load.value,
+                self.maximum_load.unit,
+                MassUnit.KG,
+            )
+
+            if not _measurements_match(
+                converted,
+                self.maximum_load_kg,
+            ):
+                raise ValueError(
+                    "Station maximum load source measurement "
+                    "does not match normalized value."
+                )
+
+        return self
 
 
 class WeightBalanceConfiguration(BaseModel):
@@ -163,7 +240,27 @@ class WeightBalanceConfiguration(BaseModel):
                     "Basic empty weight longitudinal arm source "
                     "measurement does not match the normalized value."
                 )
+        if self.basic_empty_weight_lateral_arm is not None:
+            if self.basic_empty_weight_lateral_arm_mm is None:
+                raise ValueError(
+                    "A normalized empty-aircraft lateral arm is required "
+                    "when a source lateral arm is provided."
+                )
 
+            converted = convert_length(
+                self.basic_empty_weight_lateral_arm.value,
+                self.basic_empty_weight_lateral_arm.unit,
+                LengthUnit.MM,
+            )
+
+            if not _measurements_match(
+                converted,
+                self.basic_empty_weight_lateral_arm_mm,
+            ):
+                raise ValueError(
+                    "Empty-aircraft lateral arm source measurement "
+                    "does not match normalized value."
+                )
         return self
 
 

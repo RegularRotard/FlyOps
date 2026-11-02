@@ -5,6 +5,7 @@ approval or confirmation that an aircraft is within its limitations.
 """
 
 from dataclasses import dataclass
+from math import isfinite
 
 from pydantic import ValidationError
 
@@ -35,6 +36,32 @@ class WBLoadAssignment:
     name: str
     weight: float
     weight_unit: MassUnit
+
+    def __post_init__(self):
+        if not self.station_id.strip():
+            raise ConfigurationAdapterError(
+                "Loading station ID cannot be empty."
+            )
+
+        if not self.name.strip():
+            raise ConfigurationAdapterError(
+                "Load name cannot be empty."
+            )
+
+        if not isfinite(self.weight):
+            raise ConfigurationAdapterError(
+                "Load weight must be finite."
+            )
+
+        if self.weight < 0:
+            raise ConfigurationAdapterError(
+                "Load weight cannot be negative."
+            )
+
+        if not isinstance(self.weight_unit, MassUnit):
+            raise ConfigurationAdapterError(
+                "Load weight unit is invalid."
+            )
 
 
 @dataclass(frozen=True)

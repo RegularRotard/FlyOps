@@ -77,9 +77,7 @@ def get_database_state(engine, aircraft_id):
             list(
                 session.scalars(
                     select(AircraftRevisionChange).where(
-                        AircraftRevisionChange.revision_id.in_(
-                            revision_ids
-                        )
+                        AircraftRevisionChange.revision_id.in_(revision_ids)
                     )
                 )
             )
@@ -97,20 +95,17 @@ def get_database_state(engine, aircraft_id):
 def test_successful_revision_commits_atomically(database):
     engine, aircraft_id = database
 
-    with Session(engine) as session:
-        with session.begin():
-            aircraft = session.get(AircraftProfile, aircraft_id)
+    with Session(engine) as session, session.begin():
+        aircraft = session.get(AircraftProfile, aircraft_id)
 
-            revision = AircraftRevisionService(
-                session
-            ).create_revision(
-                aircraft,
-                {"empty_weight_kg": 680},
-                "Initial configuration",
-                expected_revision_id=None,
-            )
+        revision = AircraftRevisionService(session).create_revision(
+            aircraft,
+            {"empty_weight_kg": 680},
+            "Initial configuration",
+            expected_revision_id=None,
+        )
 
-            revision_id = revision.id
+        revision_id = revision.id
 
     state = get_database_state(engine, aircraft_id)
 
@@ -122,24 +117,24 @@ def test_successful_revision_commits_atomically(database):
 def test_exception_rolls_back_entire_revision(database):
     engine, aircraft_id = database
 
-    with pytest.raises(RuntimeError, match="Simulated failure"):
-        with Session(engine) as session:
-            with session.begin():
-                aircraft = session.get(
-                    AircraftProfile,
-                    aircraft_id,
-                )
+    with (
+        pytest.raises(RuntimeError, match="Simulated failure"),
+        Session(engine) as session,
+        session.begin(),
+    ):
+        aircraft = session.get(
+            AircraftProfile,
+            aircraft_id,
+        )
 
-                AircraftRevisionService(
-                    session
-                ).create_revision(
-                    aircraft,
-                    {"empty_weight_kg": 680},
-                    "Initial configuration",
-                    expected_revision_id=None,
-                )
+        AircraftRevisionService(session).create_revision(
+            aircraft,
+            {"empty_weight_kg": 680},
+            "Initial configuration",
+            expected_revision_id=None,
+        )
 
-                raise RuntimeError("Simulated failure")
+        raise RuntimeError("Simulated failure")
 
     state = get_database_state(engine, aircraft_id)
 
@@ -151,43 +146,40 @@ def test_exception_rolls_back_entire_revision(database):
 def test_stale_save_preserves_committed_history(database):
     engine, aircraft_id = database
 
-    with Session(engine) as session:
-        with session.begin():
-            aircraft = session.get(
-                AircraftProfile,
-                aircraft_id,
-            )
+    with Session(engine) as session, session.begin():
+        aircraft = session.get(
+            AircraftProfile,
+            aircraft_id,
+        )
 
-            first = AircraftRevisionService(
-                session
-            ).create_revision(
-                aircraft,
-                {"empty_weight_kg": 680},
-                "Initial configuration",
-                expected_revision_id=None,
-            )
+        first = AircraftRevisionService(session).create_revision(
+            aircraft,
+            {"empty_weight_kg": 680},
+            "Initial configuration",
+            expected_revision_id=None,
+        )
 
-            first_id = first.id
+        first_id = first.id
 
-    with pytest.raises(
-        AircraftRevisionError,
-        match="changed since",
+    with (
+        pytest.raises(
+            AircraftRevisionError,
+            match="changed since",
+        ),
+        Session(engine) as session,
+        session.begin(),
     ):
-        with Session(engine) as session:
-            with session.begin():
-                aircraft = session.get(
-                    AircraftProfile,
-                    aircraft_id,
-                )
+        aircraft = session.get(
+            AircraftProfile,
+            aircraft_id,
+        )
 
-                AircraftRevisionService(
-                    session
-                ).create_revision(
-                    aircraft,
-                    {"empty_weight_kg": 685},
-                    "Stale configuration",
-                    expected_revision_id=None,
-                )
+        AircraftRevisionService(session).create_revision(
+            aircraft,
+            {"empty_weight_kg": 685},
+            "Stale configuration",
+            expected_revision_id=None,
+        )
 
     state = get_database_state(engine, aircraft_id)
 
@@ -204,9 +196,7 @@ def test_explicit_rollback_removes_uncommitted_revision(database):
             aircraft_id,
         )
 
-        AircraftRevisionService(
-            session
-        ).create_revision(
+        AircraftRevisionService(session).create_revision(
             aircraft,
             {"empty_weight_kg": 680},
             "Uncommitted configuration",
