@@ -35,9 +35,7 @@ class EngineCycleAllowance:
             ("Shutdown minutes", self.shutdown_minutes),
         ):
             if not isfinite(value) or value < 0:
-                raise ValueError(
-                    f"{name} must be finite and non-negative."
-                )
+                raise ValueError(f"{name} must be finite and non-negative.")
 
 
 @dataclass(frozen=True)
@@ -60,9 +58,7 @@ class FlightDayLegFuelResult:
         """Total idle allowance assigned to this flight leg."""
 
         return (
-            self.startup_minutes
-            + self.shutdown_minutes
-            + self.additional_idle_minutes
+            self.startup_minutes + self.shutdown_minutes + self.additional_idle_minutes
         )
 
 
@@ -94,16 +90,12 @@ def calculate_flight_day_fuel(
     """
 
     if not legs:
-        raise ValueError(
-            "At least one flight leg is required."
-        )
+        raise ValueError("At least one flight leg is required.")
 
     leg_ids = [leg.leg_id for leg in legs]
 
     if len(leg_ids) != len(set(leg_ids)):
-        raise ValueError(
-            "Flight leg IDs must be unique."
-        )
+        raise ValueError("Flight leg IDs must be unique.")
 
     if allowance is None:
         allowance = EngineCycleAllowance()
@@ -117,22 +109,12 @@ def calculate_flight_day_fuel(
 
         shutdown_required = leg.shutdown_after_leg
 
-        startup_minutes = (
-            allowance.startup_minutes
-            if startup_required
-            else 0.0
-        )
+        startup_minutes = allowance.startup_minutes if startup_required else 0.0
 
-        shutdown_minutes = (
-            allowance.shutdown_minutes
-            if shutdown_required
-            else 0.0
-        )
+        shutdown_minutes = allowance.shutdown_minutes if shutdown_required else 0.0
 
         total_idle_minutes = (
-            startup_minutes
-            + shutdown_minutes
-            + leg.additional_idle_minutes
+            startup_minutes + shutdown_minutes + leg.additional_idle_minutes
         )
 
         fuel = calculate_planned_fuel(
@@ -158,20 +140,11 @@ def calculate_flight_day_fuel(
         # Determine the engine state before the next flight.
         engine_running = not shutdown_required
 
-    total_flight_minutes = sum(
-        result.fuel.flight_minutes
-        for result in results
-    )
+    total_flight_minutes = sum(result.fuel.flight_minutes for result in results)
 
-    total_idle_minutes = sum(
-        result.total_idle_minutes
-        for result in results
-    )
+    total_idle_minutes = sum(result.total_idle_minutes for result in results)
 
-    total_fuel_kg = sum(
-        result.fuel.total_fuel.kilograms
-        for result in results
-    )
+    total_fuel_kg = sum(result.fuel.total_fuel.kilograms for result in results)
 
     if not all(
         isfinite(value)
@@ -181,9 +154,7 @@ def calculate_flight_day_fuel(
             total_fuel_kg,
         )
     ):
-        raise ValueError(
-            "Flight-day fuel totals must be finite."
-        )
+        raise ValueError("Flight-day fuel totals must be finite.")
 
     return FlightDayFuelResult(
         legs=tuple(results),
