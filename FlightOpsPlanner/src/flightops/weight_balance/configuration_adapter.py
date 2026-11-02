@@ -13,7 +13,10 @@ from flightops.aircraft.schemas.configuration import (
     AircraftConfiguration,
     ConfigurationStatus,
 )
-from flightops.database.models import AircraftProfileRevision
+from flightops.database.models import (
+    AircraftProfile,
+    AircraftProfileRevision,
+)
 from flightops.weight_balance.calculator import calculate_weight_balance
 from flightops.weight_balance.models import LoadItem, WeightBalanceResult
 from flightops.weight_balance.units import (
@@ -94,11 +97,42 @@ def _normalized_arm(source, legacy_mm: float) -> float:
         source.unit,
         LengthUnit.MM,
     )
+def _validate_aircraft_identity(
+    revision: AircraftProfileRevision,
+    configuration: AircraftConfiguration,
+    aircraft: AircraftProfile,
+) -> None:
+    """Verify a configuration revision belongs to the expected aircraft."""
 
+    if aircraft.id is None:
+        raise ConfigurationAdapterError(
+            "Aircraft profile must be persisted."
+        )
+
+    if revision.profile_id != aircraft.id:
+        raise ConfigurationAdapterError(
+            "Configuration revision belongs to a different aircraft."
+        )
+
+    if configuration.registration != aircraft.registration:
+        raise ConfigurationAdapterError(
+            "Configuration registration does not match aircraft."
+        )
+
+    if configuration.serial_number != aircraft.serial_number:
+        raise ConfigurationAdapterError(
+            "Configuration serial number does not match aircraft."
+        )
+
+    if configuration.variant_id != aircraft.variant_id:
+        raise ConfigurationAdapterError(
+            "Configuration variant does not match aircraft."
+        )
 
 def calculate_from_revision(
     revision: AircraftProfileRevision,
     assignments: tuple[WBLoadAssignment, ...],
+    aircraft: AircraftProfile | None = None,
 ) -> VersionedWBResult:
     """Calculate W&B using a specific aircraft configuration revision."""
 
@@ -106,7 +140,14 @@ def calculate_from_revision(
         raise ConfigurationAdapterError(
             "A persisted aircraft configuration revision is required."
         )
-
+    if (
+        not isinstance(revision.revision_number, int)
+        or isinstance(revision.revision_number, bool)
+        or revision.revision_number < 1
+    ):
+        raise ConfigurationAdapterError(
+            "Aircraft configuration revision number must be positive."
+        )
     try:
         configuration = AircraftConfiguration.model_validate(
             revision.snapshot
@@ -115,7 +156,12 @@ def calculate_from_revision(
         raise ConfigurationAdapterError(
             "Aircraft configuration revision is invalid."
         ) from exc
-
+    if aircraft is not None:
+        _validate_aircraft_identity(
+            revision,
+            configuration,
+            aircraft,
+        )
     if configuration.status == ConfigurationStatus.DRAFT:
         raise ConfigurationAdapterError(
             "Draft aircraft configurations cannot be used for W&B calculations."
@@ -180,10 +226,18 @@ def calculate_from_revision(
             else None
         )
 
-        station_totals[assignment.station_id] = (
+        station_total = (
             station_totals.get(assignment.station_id, 0.0)
             + weight_kg
         )
+
+        if not isfinite(station_total):
+            raise ConfigurationAdapterError(
+                f"Accumulated load at station "
+                f"'{assignment.station_id}' is nonfinite."
+            )
+
+        station_totals[assignment.station_id] = station_total
 
         if (
             maximum_load_kg is not None

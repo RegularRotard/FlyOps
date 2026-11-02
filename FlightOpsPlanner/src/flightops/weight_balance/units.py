@@ -48,10 +48,14 @@ def _convert(value, from_unit, to_unit, factors):
         raise ValueError("Measurement must be finite.")
 
     try:
-        return value * factors[from_unit] / factors[to_unit]
+        result = value * factors[from_unit] / factors[to_unit]
     except KeyError as exc:
         raise ValueError(f"Unsupported unit: {exc}") from exc
 
+    if not isfinite(result):
+        raise ValueError("Unit conversion produced a nonfinite result.")
+
+    return result
 
 def convert_mass(
     value: float,
@@ -86,15 +90,24 @@ def convert_moment(
 ) -> float:
     """Convert moments between mass-length unit combinations."""
 
-    return (
-        value
-        * MASS_TO_KG[mass_from]
-        * LENGTH_TO_MM[length_from]
-        / MASS_TO_KG[mass_to]
-        / LENGTH_TO_MM[length_to]
-    )
+    if not isfinite(value):
+        raise ValueError("Moment must be finite.")
 
+    try:
+        result = (
+            value
+            * MASS_TO_KG[mass_from]
+            * LENGTH_TO_MM[length_from]
+            / MASS_TO_KG[mass_to]
+            / LENGTH_TO_MM[length_to]
+        )
+    except KeyError as exc:
+        raise ValueError(f"Unsupported unit: {exc}") from exc
 
+    if not isfinite(result):
+        raise ValueError("Moment conversion produced a nonfinite result.")
+
+    return result
 def fuel_volume_to_mass(
     volume: float,
     volume_unit: VolumeUnit,
@@ -111,5 +124,8 @@ def fuel_volume_to_mass(
 
     litres = convert_volume(volume, volume_unit, VolumeUnit.L)
     mass_kg = litres * density_kg_per_l
+
+    if not isfinite(mass_kg):
+        raise ValueError("Fuel mass calculation produced a nonfinite result.")
 
     return convert_mass(mass_kg, MassUnit.KG, mass_unit)
