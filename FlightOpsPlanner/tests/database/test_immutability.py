@@ -49,15 +49,19 @@ def test_revision_tables_have_update_and_delete_protection(
     table,
 ):
     with protected_engine.connect() as connection:
-        triggers = connection.execute(
-            text("""
+        triggers = (
+            connection.execute(
+                text("""
                 SELECT name
                 FROM sqlite_master
                 WHERE type = 'trigger'
                 AND tbl_name = :table
             """),
-            {"table": table},
-        ).scalars().all()
+                {"table": table},
+            )
+            .scalars()
+            .all()
+        )
 
     assert f"protect_{table}_update" in triggers
     assert f"protect_{table}_delete" in triggers

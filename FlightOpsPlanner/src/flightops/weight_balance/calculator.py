@@ -21,44 +21,32 @@ def calculate_weight_balance(
     items = tuple(loads)
 
     if not items:
-        raise WeightBalanceError(
-            "At least one load item is required."
-        )
+        raise WeightBalanceError("At least one load item is required.")
 
     try:
-        total_weight = fsum(
-            item.weight_kg for item in items
-        )
+        total_weight = fsum(item.weight_kg for item in items)
     except OverflowError as exc:
         raise WeightBalanceError(
             "Total aircraft weight exceeds numerical limits."
         ) from exc
 
     if not isfinite(total_weight) or total_weight <= 0:
-        raise WeightBalanceError(
-            "Total aircraft weight must be positive and finite."
-        )
+        raise WeightBalanceError("Total aircraft weight must be positive and finite.")
 
     try:
-        total_moment = fsum(
-            item.moment_kg_mm for item in items
-        )
+        total_moment = fsum(item.moment_kg_mm for item in items)
     except OverflowError as exc:
         raise WeightBalanceError(
             "Total aircraft moment exceeds numerical limits."
         ) from exc
 
     if not isfinite(total_moment):
-        raise WeightBalanceError(
-            "Total aircraft moment must be finite."
-        )
+        raise WeightBalanceError("Total aircraft moment must be finite.")
 
     cg = total_moment / total_weight
 
     if not isfinite(cg):
-        raise WeightBalanceError(
-            "Calculated CG must be finite."
-        )
+        raise WeightBalanceError("Calculated CG must be finite.")
 
     return WeightBalanceResult(
         total_weight_kg=total_weight,

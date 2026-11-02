@@ -46,9 +46,7 @@ def test_aircraft_hierarchy():
         session.commit()
 
         result = session.scalar(
-            select(AircraftProfile).where(
-                AircraftProfile.registration == "5H-TEST"
-            )
+            select(AircraftProfile).where(AircraftProfile.registration == "5H-TEST")
         )
 
         assert result is not None
@@ -56,9 +54,7 @@ def test_aircraft_hierarchy():
         assert result.variant.family.name == "R44"
         assert result.variant.family.manufacturer.name == "Robinson"
 
-        variants = session.scalars(
-            select(AircraftVariant)
-        ).all()
+        variants = session.scalars(select(AircraftVariant)).all()
 
         assert len(variants) == 2
 

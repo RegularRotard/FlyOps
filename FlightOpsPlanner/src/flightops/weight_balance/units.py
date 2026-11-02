@@ -57,6 +57,7 @@ def _convert(value, from_unit, to_unit, factors):
 
     return result
 
+
 def convert_mass(
     value: float,
     from_unit: MassUnit,
@@ -108,6 +109,8 @@ def convert_moment(
         raise ValueError("Moment conversion produced a nonfinite result.")
 
     return result
+
+
 def fuel_volume_to_mass(
     volume: float,
     volume_unit: VolumeUnit,

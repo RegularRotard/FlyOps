@@ -110,8 +110,9 @@ def test_stale_revision_rejected_across_sessions(database):
     with Session(engine) as session:
         revisions = list(
             session.scalars(
-                select(AircraftProfileRevision)
-                .where(AircraftProfileRevision.profile_id == aircraft_id)
+                select(AircraftProfileRevision).where(
+                    AircraftProfileRevision.profile_id == aircraft_id
+                )
             )
         )
 

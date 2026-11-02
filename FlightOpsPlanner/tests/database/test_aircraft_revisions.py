@@ -162,6 +162,8 @@ def test_nested_configuration_changes():
 
     assert len(changes) == 1
     assert changes[0]["field_path"] == "engine.model"
+
+
 def test_outdated_revision_rejected(session, aircraft):
     service = AircraftRevisionService(session)
 

@@ -41,9 +41,7 @@ class AircraftConfigurationService:
         """Validate and save a new aircraft configuration revision."""
 
         try:
-            validated = AircraftConfiguration.model_validate(
-                configuration
-            )
+            validated = AircraftConfiguration.model_validate(configuration)
         except ValidationError as exc:
             raise AircraftConfigurationError(
                 f"Invalid aircraft configuration: {exc}"
@@ -57,20 +55,17 @@ class AircraftConfigurationService:
 
         if validated.registration != profile.registration:
             raise AircraftConfigurationError(
-                "Configuration registration does not match "
-                "the aircraft profile."
+                "Configuration registration does not match the aircraft profile."
             )
 
         if validated.serial_number != profile.serial_number:
             raise AircraftConfigurationError(
-                "Configuration serial number does not match "
-                "the aircraft profile."
+                "Configuration serial number does not match the aircraft profile."
             )
 
         if validated.variant_id != profile.variant_id:
             raise AircraftConfigurationError(
-                "Configuration variant does not match "
-                "the aircraft profile."
+                "Configuration variant does not match the aircraft profile."
             )
 
         snapshot = validated.model_dump(mode="json")
@@ -102,6 +97,4 @@ class AircraftConfigurationService:
                 "Aircraft current revision could not be found."
             )
 
-        return AircraftConfiguration.model_validate(
-            revision.snapshot
-        )
+        return AircraftConfiguration.model_validate(revision.snapshot)

@@ -16,9 +16,7 @@ from flightops.database.models import (
 
 @pytest.fixture
 def database(tmp_path):
-    engine = create_engine(
-        f"sqlite:///{tmp_path / 'revision_constraints.db'}"
-    )
+    engine = create_engine(f"sqlite:///{tmp_path / 'revision_constraints.db'}")
 
     @event.listens_for(engine, "connect")
     def enable_foreign_keys(dbapi_connection, connection_record):
@@ -40,9 +38,7 @@ def test_revision_numbers_have_unique_constraint(database):
         AircraftProfileRevision.__tablename__
     )
 
-    indexes = inspector.get_indexes(
-        AircraftProfileRevision.__tablename__
-    )
+    indexes = inspector.get_indexes(AircraftProfileRevision.__tablename__)
 
     required_columns = {
         "profile_id",
@@ -55,8 +51,7 @@ def test_revision_numbers_have_unique_constraint(database):
     )
 
     has_unique_index = any(
-        index.get("unique")
-        and set(index["column_names"]) == required_columns
+        index.get("unique") and set(index["column_names"]) == required_columns
         for index in indexes
     )
 

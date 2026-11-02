@@ -36,12 +36,7 @@ def test_multiple_loads():
 
     expected_weight = 935
 
-    expected_moment = (
-        680 * 2500
-        + 80 * 1800
-        + 75 * 1800
-        + 100 * 2400
-    )
+    expected_moment = 680 * 2500 + 80 * 1800 + 75 * 1800 + 100 * 2400
 
     expected_cg = expected_moment / expected_weight
 

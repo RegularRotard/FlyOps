@@ -49,7 +49,6 @@ def test_total_moment_overflow_rejected():
         calculate_weight_balance(loads)
 
 
-
 def test_valid_calculation_unchanged():
     loads = [
         LoadItem("Empty aircraft", 680, 2500),
@@ -65,6 +64,4 @@ def test_valid_calculation_unchanged():
         680 * 2500 + 80 * 1800 + 100 * 2400
     )
 
-    assert result.cg_mm == pytest.approx(
-        result.total_moment_kg_mm / 860
-    )
+    assert result.cg_mm == pytest.approx(result.total_moment_kg_mm / 860)

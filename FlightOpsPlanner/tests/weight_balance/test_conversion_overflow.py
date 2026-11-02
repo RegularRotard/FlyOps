@@ -62,6 +62,4 @@ def test_fuel_mass_overflow_rejected():
 
 
 def test_normal_conversion_still_works():
-    assert convert_mass(100, MassUnit.KG, MassUnit.LB) == pytest.approx(
-        220.462262
-    )
+    assert convert_mass(100, MassUnit.KG, MassUnit.LB) == pytest.approx(220.462262)

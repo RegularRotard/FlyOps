@@ -42,29 +42,19 @@ class WBLoadAssignment:
 
     def __post_init__(self):
         if not self.station_id.strip():
-            raise ConfigurationAdapterError(
-                "Loading station ID cannot be empty."
-            )
+            raise ConfigurationAdapterError("Loading station ID cannot be empty.")
 
         if not self.name.strip():
-            raise ConfigurationAdapterError(
-                "Load name cannot be empty."
-            )
+            raise ConfigurationAdapterError("Load name cannot be empty.")
 
         if not isfinite(self.weight):
-            raise ConfigurationAdapterError(
-                "Load weight must be finite."
-            )
+            raise ConfigurationAdapterError("Load weight must be finite.")
 
         if self.weight < 0:
-            raise ConfigurationAdapterError(
-                "Load weight cannot be negative."
-            )
+            raise ConfigurationAdapterError("Load weight cannot be negative.")
 
         if not isinstance(self.weight_unit, MassUnit):
-            raise ConfigurationAdapterError(
-                "Load weight unit is invalid."
-            )
+            raise ConfigurationAdapterError("Load weight unit is invalid.")
 
 
 @dataclass(frozen=True)
@@ -97,6 +87,8 @@ def _normalized_arm(source, legacy_mm: float) -> float:
         source.unit,
         LengthUnit.MM,
     )
+
+
 def _validate_aircraft_identity(
     revision: AircraftProfileRevision,
     configuration: AircraftConfiguration,
@@ -105,9 +97,7 @@ def _validate_aircraft_identity(
     """Verify a configuration revision belongs to the expected aircraft."""
 
     if aircraft.id is None:
-        raise ConfigurationAdapterError(
-            "Aircraft profile must be persisted."
-        )
+        raise ConfigurationAdapterError("Aircraft profile must be persisted.")
 
     if revision.profile_id != aircraft.id:
         raise ConfigurationAdapterError(
@@ -129,6 +119,7 @@ def _validate_aircraft_identity(
             "Configuration variant does not match aircraft."
         )
 
+
 def calculate_from_revision(
     revision: AircraftProfileRevision,
     assignments: tuple[WBLoadAssignment, ...],
@@ -149,9 +140,7 @@ def calculate_from_revision(
             "Aircraft configuration revision number must be positive."
         )
     try:
-        configuration = AircraftConfiguration.model_validate(
-            revision.snapshot
-        )
+        configuration = AircraftConfiguration.model_validate(revision.snapshot)
     except ValidationError as exc:
         raise ConfigurationAdapterError(
             "Aircraft configuration revision is invalid."
@@ -174,10 +163,7 @@ def calculate_from_revision(
             "Aircraft configuration has no weight-and-balance data."
         )
 
-    station_lookup = {
-        station.station_id: station
-        for station in wb.loading_stations
-    }
+    station_lookup = {station.station_id: station for station in wb.loading_stations}
 
     empty_weight = _normalized_mass(
         wb.basic_empty_weight,
@@ -221,20 +207,15 @@ def calculate_from_revision(
                 station.maximum_load,
                 station.maximum_load_kg,
             )
-            if station.maximum_load is not None
-            or station.maximum_load_kg is not None
+            if station.maximum_load is not None or station.maximum_load_kg is not None
             else None
         )
 
-        station_total = (
-            station_totals.get(assignment.station_id, 0.0)
-            + weight_kg
-        )
+        station_total = station_totals.get(assignment.station_id, 0.0) + weight_kg
 
         if not isfinite(station_total):
             raise ConfigurationAdapterError(
-                f"Accumulated load at station "
-                f"'{assignment.station_id}' is nonfinite."
+                f"Accumulated load at station '{assignment.station_id}' is nonfinite."
             )
 
         station_totals[assignment.station_id] = station_total

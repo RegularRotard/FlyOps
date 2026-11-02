@@ -37,16 +37,10 @@ class AircraftFamily(UUIDMixin, TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
 
-    manufacturer: Mapped["Manufacturer"] = relationship(
-        back_populates="families"
-    )
-    variants: Mapped[list["AircraftVariant"]] = relationship(
-        back_populates="family"
-    )
+    manufacturer: Mapped["Manufacturer"] = relationship(back_populates="families")
+    variants: Mapped[list["AircraftVariant"]] = relationship(back_populates="family")
 
-    __table_args__ = (
-        UniqueConstraint("manufacturer_id", "name"),
-    )
+    __table_args__ = (UniqueConstraint("manufacturer_id", "name"),)
 
 
 class AircraftVariant(UUIDMixin, TimestampMixin, Base):
@@ -65,9 +59,7 @@ class AircraftVariant(UUIDMixin, TimestampMixin, Base):
         nullable=True,
     )
 
-    family: Mapped["AircraftFamily"] = relationship(
-        back_populates="variants"
-    )
+    family: Mapped["AircraftFamily"] = relationship(back_populates="variants")
     revisions: Mapped[list["AircraftVariantRevision"]] = relationship(
         back_populates="variant",
         foreign_keys="AircraftVariantRevision.variant_id",
@@ -77,13 +69,9 @@ class AircraftVariant(UUIDMixin, TimestampMixin, Base):
         foreign_keys=[current_revision_id],
         post_update=True,
     )
-    aircraft: Mapped[list["AircraftProfile"]] = relationship(
-        back_populates="variant"
-    )
+    aircraft: Mapped[list["AircraftProfile"]] = relationship(back_populates="variant")
 
-    __table_args__ = (
-        UniqueConstraint("family_id", "designation"),
-    )
+    __table_args__ = (UniqueConstraint("family_id", "designation"),)
 
 
 class AircraftVariantRevision(UUIDMixin, Base):
@@ -115,9 +103,7 @@ class AircraftVariantRevision(UUIDMixin, Base):
         cascade="all, delete-orphan",
     )
 
-    __table_args__ = (
-        UniqueConstraint("variant_id", "revision_number"),
-    )
+    __table_args__ = (UniqueConstraint("variant_id", "revision_number"),)
 
 
 class AircraftVariantRevisionChange(UUIDMixin, Base):
@@ -131,9 +117,7 @@ class AircraftVariantRevisionChange(UUIDMixin, Base):
     old_value: Mapped[Any | None] = mapped_column(JSON)
     new_value: Mapped[Any | None] = mapped_column(JSON)
 
-    revision: Mapped["AircraftVariantRevision"] = relationship(
-        back_populates="changes"
-    )
+    revision: Mapped["AircraftVariantRevision"] = relationship(back_populates="changes")
 
 
 class AircraftProfile(UUIDMixin, TimestampMixin, Base):
@@ -179,9 +163,7 @@ class AircraftProfile(UUIDMixin, TimestampMixin, Base):
         nullable=True,
     )
 
-    variant: Mapped["AircraftVariant"] = relationship(
-        back_populates="aircraft"
-    )
+    variant: Mapped["AircraftVariant"] = relationship(back_populates="aircraft")
     revisions: Mapped[list["AircraftProfileRevision"]] = relationship(
         back_populates="profile",
         foreign_keys="AircraftProfileRevision.profile_id",
@@ -226,9 +208,7 @@ class AircraftProfileRevision(UUIDMixin, Base):
         cascade="all, delete-orphan",
     )
 
-    __table_args__ = (
-        UniqueConstraint("profile_id", "revision_number"),
-    )
+    __table_args__ = (UniqueConstraint("profile_id", "revision_number"),)
 
 
 class AircraftRevisionChange(UUIDMixin, Base):
@@ -242,9 +222,7 @@ class AircraftRevisionChange(UUIDMixin, Base):
     old_value: Mapped[Any | None] = mapped_column(JSON)
     new_value: Mapped[Any | None] = mapped_column(JSON)
 
-    revision: Mapped["AircraftProfileRevision"] = relationship(
-        back_populates="changes"
-    )
+    revision: Mapped["AircraftProfileRevision"] = relationship(back_populates="changes")
 
 
 class AircraftDocument(UUIDMixin, TimestampMixin, Base):
@@ -268,17 +246,15 @@ class AircraftDocument(UUIDMixin, TimestampMixin, Base):
     effective_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     notes: Mapped[str | None] = mapped_column(Text)
 
-    profile: Mapped["AircraftProfile | None"] = relationship(
-        back_populates="documents"
-    )
+    profile: Mapped["AircraftProfile | None"] = relationship(back_populates="documents")
 
     __table_args__ = (
-    CheckConstraint(
-        """
+        CheckConstraint(
+            """
         (profile_id IS NOT NULL AND variant_id IS NULL)
         OR
         (profile_id IS NULL AND variant_id IS NOT NULL)
         """,
-        name="ck_aircraft_document_single_owner",
-    ),
-)
+            name="ck_aircraft_document_single_owner",
+        ),
+    )

@@ -14,6 +14,8 @@ from flightops.database.models import (
 )
 
 _UNSPECIFIED = object()
+
+
 class AircraftRevisionError(Exception):
     """Raised when an aircraft revision operation is invalid."""
 
@@ -35,14 +37,10 @@ class AircraftRevisionService:
         """Create a new revision without modifying historical snapshots."""
 
         if not description.strip():
-            raise AircraftRevisionError(
-                "A revision description is required."
-            )
+            raise AircraftRevisionError("A revision description is required.")
 
         if not isinstance(configuration, dict):
-            raise AircraftRevisionError(
-                "Aircraft configuration must be a dictionary."
-            )
+            raise AircraftRevisionError("Aircraft configuration must be a dictionary.")
 
         # Flush pending aircraft records before creating revision links.
         self.session.add(profile)
@@ -67,20 +65,14 @@ class AircraftRevisionService:
                 "Reload the latest revision before saving."
             )
 
-        previous_snapshot = (
-            deepcopy(latest.snapshot) if latest else {}
-        )
+        previous_snapshot = deepcopy(latest.snapshot) if latest else {}
 
         new_snapshot = deepcopy(configuration)
 
         if latest and previous_snapshot == new_snapshot:
-            raise AircraftRevisionError(
-                "Configuration has not changed."
-            )
+            raise AircraftRevisionError("Configuration has not changed.")
 
-        revision_number = (
-            latest.revision_number + 1 if latest else 1
-        )
+        revision_number = latest.revision_number + 1 if latest else 1
 
         revision = AircraftProfileRevision(
             profile_id=profile.id,
@@ -170,9 +162,7 @@ class AircraftRevisionService:
         )
 
         if revision is None:
-            raise AircraftRevisionError(
-                f"Revision {revision_number} not found."
-            )
+            raise AircraftRevisionError(f"Revision {revision_number} not found.")
 
         return revision
 
@@ -217,10 +207,7 @@ class AircraftRevisionService:
             old_value = old.get(key)
             new_value = new.get(key)
 
-            if (
-                isinstance(old_value, dict)
-                and isinstance(new_value, dict)
-            ):
+            if isinstance(old_value, dict) and isinstance(new_value, dict):
                 changes.extend(
                     AircraftRevisionService.compare_snapshots(
                         old_value,

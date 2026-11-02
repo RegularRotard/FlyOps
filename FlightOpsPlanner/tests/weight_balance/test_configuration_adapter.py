@@ -100,9 +100,7 @@ def test_passenger_added_to_empty_aircraft():
 
     expected_moment = 680 * 2500 + 80 * 2000
 
-    assert result.calculation.total_moment_kg_mm == pytest.approx(
-        expected_moment
-    )
+    assert result.calculation.total_moment_kg_mm == pytest.approx(expected_moment)
 
 
 def test_pound_load_converted():

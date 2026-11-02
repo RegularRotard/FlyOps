@@ -32,6 +32,7 @@ class TechnicalDocumentReference(BaseModel):
     title: str = Field(min_length=1)
     revision: str | None = None
 
+
 class MassMeasurement(BaseModel):
     """A mass measurement preserving its original units."""
 
@@ -55,6 +56,8 @@ class ArmMeasurement(BaseModel):
     )
 
     unit: LengthUnit
+
+
 def _measurements_match(
     source_value: float,
     normalized_value: float,
@@ -67,17 +70,20 @@ def _measurements_match(
         rel_tol=1e-9,
         abs_tol=1e-6,
     )
+
+
 class LoadingStation(BaseModel):
     """An aircraft loading station.
 
     Arms are measured relative to the aircraft's approved datum.
     Negative arms are permitted where applicable.
     """
+
     longitudinal_arm: ArmMeasurement | None = None
 
     lateral_arm: ArmMeasurement | None = None
 
-    maximum_load: MassMeasurement | None = None 
+    maximum_load: MassMeasurement | None = None
     station_id: str = Field(min_length=1)
     description: str = Field(min_length=1)
 
@@ -92,6 +98,7 @@ class LoadingStation(BaseModel):
         gt=0,
         allow_inf_nan=False,
     )
+
     @model_validator(mode="after")
     def validate_source_measurements(self):
         """Verify source-unit measurements match normalized station data."""
@@ -159,8 +166,103 @@ class LoadingStation(BaseModel):
         return self
 
 
+class AircraftWeightLimits(BaseModel):
+    """Aircraft weight limitations in kilograms."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    maximum_takeoff_weight_kg: float = Field(
+        gt=0,
+        allow_inf_nan=False,
+    )
+
+    maximum_landing_weight_kg: float | None = Field(
+        default=None,
+        gt=0,
+        allow_inf_nan=False,
+    )
+
+    minimum_operating_weight_kg: float | None = Field(
+        default=None,
+        ge=0,
+        allow_inf_nan=False,
+    )
+
+    @model_validator(mode="after")
+    def validate_weight_limits(self):
+        if (
+            self.maximum_landing_weight_kg is not None
+            and self.maximum_landing_weight_kg > self.maximum_takeoff_weight_kg
+        ):
+            raise ValueError(
+                "Maximum landing weight cannot exceed maximum takeoff weight."
+            )
+
+        if (
+            self.minimum_operating_weight_kg is not None
+            and self.minimum_operating_weight_kg > self.maximum_takeoff_weight_kg
+        ):
+            raise ValueError(
+                "Minimum operating weight cannot exceed maximum takeoff weight."
+            )
+
+        return self
+
+
+class CGEnvelopePoint(BaseModel):
+    """Longitudinal CG limits at a specified aircraft weight."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    weight_kg: float = Field(
+        gt=0,
+        allow_inf_nan=False,
+    )
+
+    forward_limit_mm: float = Field(
+        allow_inf_nan=False,
+    )
+
+    aft_limit_mm: float = Field(
+        allow_inf_nan=False,
+    )
+
+    @model_validator(mode="after")
+    def validate_cg_limits(self):
+        if self.forward_limit_mm >= self.aft_limit_mm:
+            raise ValueError("Forward CG limit must be less than aft CG limit.")
+
+        return self
+
+
+class LongitudinalCGEnvelope(BaseModel):
+    """Weight-dependent longitudinal CG limits."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    points: list[CGEnvelopePoint] = Field(
+        min_length=2,
+    )
+
+    @model_validator(mode="after")
+    def validate_points(self):
+        weights = [point.weight_kg for point in self.points]
+
+        if weights != sorted(weights):
+            raise ValueError("CG envelope points must be ordered by weight.")
+
+        if len(weights) != len(set(weights)):
+            raise ValueError("CG envelope weights must be unique.")
+
+        return self
+
+
 class WeightBalanceConfiguration(BaseModel):
     """Aircraft-specific weight-and-balance configuration."""
+
+    weight_limits: AircraftWeightLimits | None = None
+
+    longitudinal_cg_envelope: LongitudinalCGEnvelope | None = None
     basic_empty_weight: MassMeasurement | None = None
 
     basic_empty_weight_longitudinal_arm: ArmMeasurement | None = None
@@ -190,17 +292,13 @@ class WeightBalanceConfiguration(BaseModel):
 
     @model_validator(mode="after")
     def validate_unique_stations(self):
-        station_ids = [
-            station.station_id
-            for station in self.loading_stations
-        ]
+        station_ids = [station.station_id for station in self.loading_stations]
 
         if len(station_ids) != len(set(station_ids)):
-            raise ValueError(
-                "Loading station identifiers must be unique."
-            )
+            raise ValueError("Loading station identifiers must be unique.")
 
         return self
+
     @model_validator(mode="after")
     def validate_source_measurements(self):
         """Check that source measurements agree with normalized values."""
@@ -290,10 +388,7 @@ class AircraftConfiguration(BaseModel):
         if self.weight_balance is None:
             return self
 
-        document_ids = {
-            document.document_id
-            for document in self.technical_documents
-        }
+        document_ids = {document.document_id for document in self.technical_documents}
 
         source_id = self.weight_balance.source_document_id
 
@@ -304,6 +399,8 @@ class AircraftConfiguration(BaseModel):
             )
 
         return self
+
+
 def validate_aircraft_configuration(
     configuration: dict,
 ) -> AircraftConfiguration:

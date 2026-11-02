@@ -33,5 +33,6 @@ def initialise_database() -> None:
     with engine.begin() as connection:
         install_immutability_triggers(connection)
 
+
 def get_session():
     return SessionLocal()

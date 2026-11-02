@@ -25,9 +25,7 @@ def base_configuration():
 
 
 def test_legacy_configuration_remains_valid():
-    config = WeightBalanceConfiguration.model_validate(
-        base_configuration()
-    )
+    config = WeightBalanceConfiguration.model_validate(base_configuration())
 
     assert config.basic_empty_weight_kg == 680
 
@@ -117,7 +115,4 @@ def test_matching_source_arm():
 
     config = WeightBalanceConfiguration.model_validate(data)
 
-    assert (
-        config.basic_empty_weight_longitudinal_arm.unit
-        == LengthUnit.CM
-    )
+    assert config.basic_empty_weight_longitudinal_arm.unit == LengthUnit.CM

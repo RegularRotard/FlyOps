@@ -45,13 +45,9 @@ def specification():
 
 
 def test_mixed_station_units(specification):
-    assert specification.get_station("pilot").arm_mm == pytest.approx(
-        2032
-    )
+    assert specification.get_station("pilot").arm_mm == pytest.approx(2032)
 
-    assert specification.get_station("passenger").arm_mm == pytest.approx(
-        2100
-    )
+    assert specification.get_station("passenger").arm_mm == pytest.approx(2100)
 
 
 def test_negative_station_arm(specification):
