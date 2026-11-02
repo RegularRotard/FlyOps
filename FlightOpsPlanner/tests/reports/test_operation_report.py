@@ -241,6 +241,8 @@ def test_html_escapes_user_supplied_text():
 
     assert "&lt;script&gt;" in html
     assert "<script>alert(1)</script>" not in html
+
+
 def test_report_displays_fuel_in_three_units():
     operation, calculations, assessment = report_inputs()
 
