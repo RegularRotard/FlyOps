@@ -34,3 +34,6 @@ data/airports/
 # OS
 .DS_Store
 Thumbs.db
+
+# Generated reports and exported documents
+/output/
