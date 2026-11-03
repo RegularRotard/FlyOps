@@ -14,6 +14,7 @@ from uuid import uuid4
 import pandas as pd
 import streamlit as st
 
+from app.etd_tracking import resolve_etd
 from app.flight_times import calculate_eta, format_eta
 from app.leg_rules import apply_scenic_destination, earliest_etd, enforce_minimum_etd
 from app.leg_summary import (
@@ -69,6 +70,9 @@ def _new_leg(
         "Destination": "",
         "ETD Date": departure_date,
         "ETD Time": departure_time,
+        "_etd_mode": "AUTO",
+        "_etd_origin": "AUTO",
+        "_etd_requested": None,
         "Flight Minutes": 30.0,
         "Additional Idle": 0.0,
         "Shutdown": True,
@@ -124,6 +128,11 @@ def _initialise_editor(existing: pd.DataFrame) -> None:
                 "Additional Idle": float(row.get("Additional Idle", 0.0)),
                 "Shutdown": bool(row.get("Shutdown", True)),
                 "_scenic_warning": warning,
+                "_etd_mode": (
+                    "MANUAL"
+                    if str(row.get("ETD Source", "AUTO")) in ("MANUAL", "ADJUSTED")
+                    else "AUTO"
+                ),
                 "_eti_mode": (
                     str(row.get("ETI Source", "AUTO"))
                     if str(row.get("ETI Source", "AUTO")) in ("AUTO", "MANUAL")
@@ -200,6 +209,16 @@ def _update_field(uid: str, field: str) -> None:
     widget_key = f"{field}_{uid}"
 
     leg[field] = st.session_state[widget_key]
+    if field in ("ETD Date", "ETD Time"):
+        legs = st.session_state[EDITOR_STATE_KEY]
+        first = bool(legs and legs[0]["_uid"] == uid)
+        if first:
+            leg["_etd_mode"] = "SCHEDULED"
+            leg["_etd_origin"] = "SCHEDULED"
+            leg["_etd_requested"] = None
+        else:
+            leg["_etd_mode"] = "MANUAL"
+            leg["_etd_requested"] = datetime.combine(leg["ETD Date"], leg["ETD Time"])
     if field == "Departure":
         apply_scenic_destination(leg)
         if leg["Flight Type"] == "Scenic":
@@ -271,6 +290,67 @@ def _sync_widget_value(uid: str, field: str, value: object) -> None:
         st.session_state[key] = value
 
 
+def _apply_etd_tracking(
+    leg: dict,
+    previous: dict | None,
+) -> None:
+    """Resolve ETD and synchronise date/time widgets."""
+
+    current = datetime.combine(
+        leg["ETD Date"],
+        leg["ETD Time"],
+    )
+
+    previous_eta = earliest_etd(previous)
+
+    manual_requested = (
+        leg.get("_etd_requested") if leg.get("_etd_mode") == "MANUAL" else None
+    )
+
+    if leg.get("_etd_mode") == "MANUAL" and manual_requested is None:
+        manual_requested = current
+        leg["_etd_requested"] = current
+
+    result = resolve_etd(
+        current=current,
+        previous_eta=previous_eta,
+        manual_requested=manual_requested,
+    )
+
+    leg["_etd_origin"] = result.source.value
+
+    if result.departure != current:
+        leg["ETD Date"] = result.departure.date()
+        leg["ETD Time"] = result.departure.time()
+
+        _sync_widget_value(
+            leg["_uid"],
+            "ETD Date",
+            leg["ETD Date"],
+        )
+
+        _sync_widget_value(
+            leg["_uid"],
+            "ETD Time",
+            leg["ETD Time"],
+        )
+
+
+def _reset_etd_to_auto(uid: str) -> None:
+    """Clear a manual departure-time override."""
+
+    try:
+        leg = _find_leg(uid)
+    except ValueError as exc:
+        if str(exc).startswith("Unknown flight-leg editor ID:"):
+            return
+        raise
+
+    leg["_etd_mode"] = "AUTO"
+    leg["_etd_requested"] = None
+    leg["_etd_origin"] = "AUTO"
+
+
 def _prepare_leg_for_render(leg: dict, previous: dict | None) -> None:
     """Apply route and scheduling rules before constructing Streamlit widgets."""
     uid = leg["_uid"]
@@ -279,9 +359,7 @@ def _prepare_leg_for_render(leg: dict, previous: dict | None) -> None:
     if old_destination != leg["Destination"]:
         _sync_widget_value(uid, "Destination", leg["Destination"])
 
-    if enforce_minimum_etd(leg, previous):
-        _sync_widget_value(uid, "ETD Date", leg["ETD Date"])
-        _sync_widget_value(uid, "ETD Time", leg["ETD Time"])
+    _apply_etd_tracking(leg, previous)
 
 
 def _resolve_editor_eti(
@@ -543,6 +621,34 @@ def _render_leg(
             )
 
         timing_col1, timing_col2, timing_col3, timing_col4 = st.columns(4)
+
+        etd_origin = leg.get("_etd_origin", "SCHEDULED")
+
+        if etd_origin == "AUTO":
+            st.caption("🔵 AUTO · Departure")
+        elif etd_origin == "MANUAL":
+            st.caption("🟠 MANUAL · Departure")
+        elif etd_origin == "ADJUSTED":
+            st.caption("⚠️ ADJUSTED · Departure")
+            requested = leg.get("_etd_requested")
+            if requested is not None:
+                st.warning(
+                    f"Originally requested: {requested:%d %b %Y %H:%M}. "
+                    "FlyOps adjusted the departure to avoid an overlap."
+                )
+        else:
+            st.caption("🟣 SCHEDULED · First departure")
+
+        if previous is not None and etd_origin in (
+            "MANUAL",
+            "ADJUSTED",
+        ):
+            st.button(
+                "↺ Reset ETD to Auto",
+                key=f"reset_etd_{uid}",
+                on_click=_reset_etd_to_auto,
+                args=(uid,),
+            )
 
         with timing_col1:
             st.date_input(
@@ -811,22 +917,11 @@ def _reflow_leg_sequence(start_index: int = 1) -> None:
             groundspeed,
         )
 
-        # Clamp ETD using the preceding leg's updated ETA.
-        if index > 0 and enforce_minimum_etd(
+        # Recalculate ETD after the updated route and ETI.
+        _apply_etd_tracking(
             leg,
-            legs[index - 1],
-        ):
-            _sync_widget_value(
-                leg["_uid"],
-                "ETD Date",
-                leg["ETD Date"],
-            )
-
-            _sync_widget_value(
-                leg["_uid"],
-                "ETD Time",
-                leg["ETD Time"],
-            )
+            legs[index - 1] if index > 0 else None,
+        )
 
 
 def _duplicate_leg(uid: str) -> None:
@@ -847,6 +942,9 @@ def _duplicate_leg(uid: str) -> None:
     new_leg = deepcopy(original)
     new_leg["_uid"] = uuid4().hex
     new_leg["_scenic_warning"] = False
+    new_leg["_etd_mode"] = "AUTO"
+    new_leg["_etd_origin"] = "AUTO"
+    new_leg["_etd_requested"] = None
 
     # The duplicate starts after the original finishes.
     next_departure = earliest_etd(original)
@@ -996,6 +1094,12 @@ def render_flight_leg_editor(
                 "Additional Idle": leg["Additional Idle"],
                 "ETD Date": leg["ETD Date"].isoformat(),
                 "ETD Time": leg["ETD Time"].strftime("%H:%M"),
+                "ETD Source": leg.get("_etd_origin", "SCHEDULED"),
+                "ETD Requested": (
+                    leg["_etd_requested"].isoformat(timespec="minutes")
+                    if leg.get("_etd_requested") is not None
+                    else None
+                ),
                 "ETI Minutes": leg["Flight Minutes"],
                 "ETI Source": leg.get("_eti_origin", "UNAVAILABLE"),
                 "Auto ETI Minutes": leg.get("_eti_auto_minutes"),
@@ -1014,6 +1118,8 @@ def render_flight_leg_editor(
             "Destination",
             "ETD Date",
             "ETD Time",
+            "ETD Source",
+            "ETD Requested",
             "ETI Minutes",
             "ETI Source",
             "Auto ETI Minutes",
