@@ -1,6 +1,6 @@
 """Pure draft-flight-leg rules (independent of Streamlit)."""
 
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 
 
 def arrival(etd_date: date, etd_time: time, minutes: float) -> datetime:
@@ -33,6 +33,12 @@ def enforce_minimum_etd(leg: dict, previous: dict | None) -> bool:
     selected = datetime.combine(leg["ETD Date"], leg["ETD Time"])
     if selected >= minimum:
         return False
-    leg["ETD Date"] = minimum.date()
-    leg["ETD Time"] = minimum.time().replace(second=0, microsecond=0)
+    # Round upward to the next whole minute, never backward.
+    adjusted = minimum.replace(second=0, microsecond=0)
+
+    if adjusted < minimum:
+        adjusted += timedelta(minutes=1)
+
+    leg["ETD Date"] = adjusted.date()
+    leg["ETD Time"] = adjusted.time()
     return True

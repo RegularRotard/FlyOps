@@ -16,6 +16,11 @@ import streamlit as st
 
 from app.flight_times import calculate_eta, format_eta
 from app.leg_rules import apply_scenic_destination, earliest_etd, enforce_minimum_etd
+from app.leg_summary import (
+    ACTIVE_LEG_KEY,
+    COMPACT_MODE_KEY,
+    render_leg_summary,
+)
 from app.location_choices import (
     format_location_option,
     load_location_choices,
@@ -737,6 +742,177 @@ def _apply_pending_location_selection() -> None:
             )
 
 
+def _select_compact_leg(uid: str) -> None:
+    """Open the specified leg in compact mode."""
+
+    st.session_state[ACTIVE_LEG_KEY] = uid
+    st.session_state[COMPACT_MODE_KEY] = True
+
+
+def _add_leg_from_summary() -> None:
+    """Append a flight leg and open it for editing."""
+
+    _add_leg()
+
+    legs = st.session_state[EDITOR_STATE_KEY]
+
+    if legs:
+        _select_compact_leg(legs[-1]["_uid"])
+
+
+def _reflow_leg_sequence(start_index: int = 1) -> None:
+    """Recalculate affected legs in chronological order."""
+
+    legs = st.session_state[EDITOR_STATE_KEY]
+
+    try:
+        saved_locations = load_location_choices()
+    except (OSError, ValueError):
+        saved_locations = ()
+
+    groundspeed = float(
+        st.session_state.get(
+            "flyops_map_cruise_speed",
+            100.0,
+        )
+    )
+
+    for index in range(max(0, start_index), len(legs)):
+        leg = legs[index]
+
+        if index > 0:
+            previous = legs[index - 1]
+
+            # Maintain route continuity.
+            leg["Departure"] = previous["Destination"]
+
+            _sync_widget_value(
+                leg["_uid"],
+                "Departure",
+                leg["Departure"],
+            )
+
+        old_destination = leg["Destination"]
+
+        apply_scenic_destination(leg)
+
+        if old_destination != leg["Destination"]:
+            _sync_widget_value(
+                leg["_uid"],
+                "Destination",
+                leg["Destination"],
+            )
+
+        # Update ETI using the newly resolved route.
+        # Manual overrides remain unchanged.
+        _resolve_editor_eti(
+            leg,
+            saved_locations,
+            groundspeed,
+        )
+
+        # Clamp ETD using the preceding leg's updated ETA.
+        if index > 0 and enforce_minimum_etd(
+            leg,
+            legs[index - 1],
+        ):
+            _sync_widget_value(
+                leg["_uid"],
+                "ETD Date",
+                leg["ETD Date"],
+            )
+
+            _sync_widget_value(
+                leg["_uid"],
+                "ETD Time",
+                leg["ETD Time"],
+            )
+
+
+def _duplicate_leg(uid: str) -> None:
+    """Duplicate a leg with a new identity and valid schedule position."""
+
+    from copy import deepcopy
+
+    try:
+        original = _find_leg(uid)
+    except ValueError as exc:
+        if str(exc).startswith("Unknown flight-leg editor ID:"):
+            return
+        raise
+
+    legs = st.session_state[EDITOR_STATE_KEY]
+    index = next(i for i, leg in enumerate(legs) if leg["_uid"] == uid)
+
+    new_leg = deepcopy(original)
+    new_leg["_uid"] = uuid4().hex
+    new_leg["_scenic_warning"] = False
+
+    # The duplicate starts after the original finishes.
+    next_departure = earliest_etd(original)
+
+    if next_departure is not None:
+        new_leg["ETD Date"] = next_departure.date()
+        new_leg["ETD Time"] = next_departure.time().replace(
+            second=0,
+            microsecond=0,
+        )
+
+    new_leg["Departure"] = original["Destination"]
+
+    apply_scenic_destination(new_leg)
+
+    # A duplicated manual ETI remains manual but requires review.
+    if new_leg.get("_eti_mode") == "MANUAL":
+        new_leg["_eti_manual_context"] = None
+        new_leg["_eti_review"] = True
+
+    legs.insert(index + 1, new_leg)
+
+    _reflow_leg_sequence(index + 1)
+
+    _select_compact_leg(new_leg["_uid"])
+
+
+def _move_leg(uid: str, direction: int) -> None:
+    """Move one flight leg and rebuild dependent route connections."""
+
+    if direction not in (-1, 1):
+        raise ValueError("Direction must be -1 or 1.")
+
+    legs = st.session_state[EDITOR_STATE_KEY]
+
+    index = next(
+        (i for i, leg in enumerate(legs) if leg["_uid"] == uid),
+        None,
+    )
+
+    if index is None:
+        return
+
+    destination_index = index + direction
+
+    if not 0 <= destination_index < len(legs):
+        return
+
+    legs[index], legs[destination_index] = (
+        legs[destination_index],
+        legs[index],
+    )
+
+    first_affected = min(index, destination_index)
+
+    # Reordered manual ETI values must be explicitly reviewed.
+    for leg in legs[first_affected:]:
+        if leg.get("_eti_mode") == "MANUAL":
+            leg["_eti_manual_context"] = None
+            leg["_eti_review"] = True
+
+    _reflow_leg_sequence(first_affected)
+
+    _select_compact_leg(uid)
+
+
 def render_flight_leg_editor(
     existing: pd.DataFrame,
 ) -> pd.DataFrame:
@@ -770,7 +946,26 @@ def render_flight_leg_editor(
             saved_locations,
             float(st.session_state.get("flyops_map_cruise_speed", 100.0)),
         )
-        _render_leg(leg, index, saved_locations)
+
+    render_leg_summary(
+        legs,
+        saved_locations,
+        on_add=_add_leg_from_summary,
+        on_duplicate=_duplicate_leg,
+        on_move=_move_leg,
+    )
+
+    compact_mode = st.toggle(
+        "Compact leg editor",
+        key=COMPACT_MODE_KEY,
+        help="Show only the selected leg while editing.",
+    )
+
+    active_uid = st.session_state.get(ACTIVE_LEG_KEY)
+
+    for index, leg in enumerate(legs, start=1):
+        if not compact_mode or leg["_uid"] == active_uid:
+            _render_leg(leg, index, saved_locations)
 
     st.button(
         "➕ Add Flight Leg",
