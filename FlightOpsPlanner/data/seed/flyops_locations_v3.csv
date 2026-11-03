@@ -1,0 +1,33 @@
+location_id,name,category,latitude,longitude,source_latitude,source_longitude,source_document,source_valid_until,verification_status
+HTAR,Arusha Airfield,Airport,-3.36777778,36.62027778,S032204,E0363713,HTAR.pdf,2026-10-01,Source expired - review required
+HTBU,Bukoba Airfield,Airport,-1.33333333,31.81666667,S012000,E0314900,HTBU.pdf,2026-10-01,Source expired - review required
+HTDA,Dar es Salaam/Julius Nyerere International Airport,Airport,-6.87805556,39.2025,S065241,E0391209,HTDA.pdf,2026-10-01,Source expired - review required
+HTDO,Dodoma Airport,Airport,-6.17027778,35.74944444,S061013,E0354458,HTDO.pdf,2026-10-01,Source expired - review required
+HTIR,Iringa Airfield,Airport,-7.66666667,35.75,S074000,E0354500,HTIR.pdf,2026-10-01,Source expired - review required
+HTKJ,Kilimanjaro International Airport,Airport,-3.42944444,37.07444444,S032546,E0370428,HTKJ.pdf,2026-10-01,Source expired - review required
+HTLI,Lindi Airfield,Airport,-9.85055556,39.75888889,S095102,E0394532,HTLI.pdf,2026-10-01,Source expired - review required
+HTMA,Mafia Airfield,Airport,-7.91666667,39.66666667,S075500,E0394000,HTMA.pdf,2026-10-01,Source expired - review required
+HTMG,Morogoro Airfield,Airport,-6.8,37.65,S064800,E0373900,HTMG.pdf,2026-10-01,Source expired - review required
+HTMT,Mtwara Airfield,Airport,-10.33611111,40.18194444,S102010,E0401055,HTMT.pdf,2026-10-01,Source expired - review required
+HTMU,Musoma Airfield,Airport,-1.5,33.8,S013000,E0334800,HTMU.pdf,2026-10-01,Source expired - review required
+HTMW,Mwanza Airport,Airport,-2.44416667,32.93194444,S022639,E0325555,HTMW.pdf,2026-10-01,Source expired - review required
+HTNA,Nachingwea Airfield,Airport,-10.35833333,38.78333333,S102130,E0384700,HTNA.pdf,2026-10-01,Source expired - review required
+HTPE,Pemba/Chake Chake Airfield,Airport,-5.25472222,39.80944444,S051517,E0394834,HTPE.pdf,2026-10-01,Source expired - review required
+HTSO,Songea Airfield,Airport,-10.68333333,35.58333333,S104100,E0353500,HTSO.pdf,2026-10-01,Source expired - review required
+HTSS,Songosongo Airfield,Airport,-8.52805556,39.50694444,S083141,E0393025,HTSS.pdf,2026-10-01,Source expired - review required
+HTTB,Tabora Airfield,Airport,-5.08333333,32.83333333,S050500,E0325000,HTTB.pdf,2026-10-01,Source expired - review required
+HTTG,Tanga Airfield,Airport,-5.1,39.06666667,S050600,E0390400,HTTG.pdf,2026-10-01,Source expired - review required
+HTUW,Nungwi Airfield,Airport,-5.75833333,39.31666667,S054530,E0391900,HTUW.pdf,2026-10-01,Source expired - review required
+HTWK,West Kilimanjaro Airfield,Airport,-3.04972222,37.0,S030259,E0370000,HTWK.pdf,2026-10-01,Source expired - review required
+HTZA,Zanzibar/Abeid Amani Karume Airfield,Airport,-6.22194444,39.22444444,S061319,E0391328,HTZA.pdf,2026-10-01,Source expired - review required
+HTZI,Mkomazi Airfield,Airport,-4.08083333,38.085,S040451,E0380506,HTZI.pdf,2026-10-01,Source expired - review required
+VRP-HTZA-01,Chumbe Island,Waypoint,-6.27972222,39.17722222,S061647,E0391038,HTZA.pdf,2026-10-01,Source expired - review required
+VRP-HTZA-02,Pungume Island,Waypoint,-6.4275,39.33861111,S062539,E0392019,HTZA.pdf,2026-10-01,Source expired - review required
+VRP-HTDA-03,Bongoyo,Waypoint,-6.69722222,39.265,S064150,E0391554,HTDA.pdf,2026-10-01,Source expired - review required
+VRP-HTDA-04,Kazimzumbwi Cement,Waypoint,-6.93222222,39.02861111,S065556,E0390143,HTDA.pdf,2026-10-01,Source expired - review required
+VRP-HTDA-05,Kimbulumbulu Island,Waypoint,-6.82111111,39.35527778,S064916,E0392119,HTDA.pdf,2026-10-01,Source expired - review required
+VRP-HTDA-06,Magoza Primary School,Waypoint,-7.08861111,39.10361111,S070519,E0390613,HTDA.pdf,2026-10-01,Source expired - review required
+VRP-HTDA-07,Mbezi Bus Stand,Waypoint,-6.78638889,39.11194444,S064711,E0390643,HTDA.pdf,2026-10-01,Source expired - review required
+VRP-HTDA-08,MSEZO,Waypoint,-6.80722222,39.20944444,S064826,E0391234,HTDA.pdf,2026-10-01,Source expired - review required
+VRP-HTDA-09,Rhino Cement,Waypoint,-7.02944444,39.26972222,S070146,E0391611,HTDA.pdf,2026-10-01,Source expired - review required
+VRP-HTDA-10,Wazo,Waypoint,-6.67,39.175,S064012,E0391030,HTDA.pdf,2026-10-01,Source expired - review required

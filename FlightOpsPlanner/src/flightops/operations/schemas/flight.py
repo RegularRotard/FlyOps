@@ -11,6 +11,8 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from flightops.operations.schemas.flight_planning import FlightType
+
 
 class LegLoadCategory(StrEnum):
     """Types of non-fuel loads carried on a flight leg."""
@@ -129,24 +131,23 @@ class FlightLeg(BaseModel):
     """One independently planned leg of a flight operation."""
 
     model_config = ConfigDict(extra="forbid")
-
     leg_id: str = Field(min_length=1)
-
     sequence_number: int = Field(ge=1)
-
+    flight_type: FlightType | None = None
     departure: FlightLocation
-
     destination: FlightLocation
-
     loads: list[LegLoadAssignment] = Field(default_factory=list)
-
     fuel: LegFuelState
 
     @model_validator(mode="after")
     def validate_leg(self):
-        if self.departure.location_id == self.destination.location_id:
-            raise ValueError("Departure and destination must be different.")
-
+        if (
+            self.departure.location_id == self.destination.location_id
+            and self.flight_type != FlightType.SCENIC
+        ):
+            raise ValueError(
+                "Departure and destination must be different except for Scenic flights."
+            )
         assignment_ids = [assignment.assignment_id for assignment in self.loads]
 
         if len(assignment_ids) != len(set(assignment_ids)):
