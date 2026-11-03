@@ -46,7 +46,7 @@ def render_location_manager() -> None:
 
     st.caption(f"{len(locations)} matching saved locations")
     if locations:
-        options = {f"{loc.name} ({loc.location_id})": loc for loc in locations}
+        options = {f"{loc.name} - {loc.location_id}": loc for loc in locations}
         selected_name = st.selectbox("Jump to saved location", ["Overview", *options])
     else:
         options = {}

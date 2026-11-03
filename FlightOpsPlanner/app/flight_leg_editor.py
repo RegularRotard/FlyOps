@@ -16,6 +16,20 @@ import streamlit as st
 
 from app.flight_times import calculate_eta, format_eta
 from app.leg_rules import apply_scenic_destination, earliest_etd, enforce_minimum_etd
+from app.location_choices import (
+    format_location_option,
+    load_location_choices,
+    location_options,
+)
+from app.new_location_dialog import (
+    PENDING_SELECTION_KEY,
+    new_location_dialog,
+)
+from flightops.locations.routing import distance_nm
+from flightops.operations.services.eti_calculation import (
+    ETISource,
+    resolve_eti,
+)
 
 FLIGHT_TYPES = ("Ferry", "Charter", "Scenic")
 
@@ -54,6 +68,12 @@ def _new_leg(
         "Additional Idle": 0.0,
         "Shutdown": True,
         "_scenic_warning": False,
+        "_eti_mode": "AUTO",
+        "_eti_manual_context": None,
+        "_eti_current_context": None,
+        "_eti_origin": "UNAVAILABLE",
+        "_eti_auto_minutes": None,
+        "_eti_review": False,
     }
 
 
@@ -99,6 +119,11 @@ def _initialise_editor(existing: pd.DataFrame) -> None:
                 "Additional Idle": float(row.get("Additional Idle", 0.0)),
                 "Shutdown": bool(row.get("Shutdown", True)),
                 "_scenic_warning": warning,
+                "_eti_mode": (
+                    str(row.get("ETI Source", "AUTO"))
+                    if str(row.get("ETI Source", "AUTO")) in ("AUTO", "MANUAL")
+                    else "AUTO"
+                ),
                 "ETD Date": (
                     row["ETD Date"]
                     if isinstance(row.get("ETD Date"), date)
@@ -161,7 +186,12 @@ def _remove_leg(uid: str) -> None:
 def _update_field(uid: str, field: str) -> None:
     """Copy a widget value into the editor's data model."""
 
-    leg = _find_leg(uid)
+    try:
+        leg = _find_leg(uid)
+    except ValueError as exc:
+        if str(exc).startswith("Unknown flight-leg editor ID:"):
+            return
+        raise
     widget_key = f"{field}_{uid}"
 
     leg[field] = st.session_state[widget_key]
@@ -174,12 +204,26 @@ def _update_field(uid: str, field: str) -> None:
 def _flight_type_changed(uid: str) -> None:
     """Apply flight-type rules when the type is changed."""
 
-    leg = _find_leg(uid)
+    try:
+        leg = _find_leg(uid)
+    except ValueError as exc:
+        if str(exc).startswith("Unknown flight-leg editor ID:"):
+            return
+        raise
 
     selected_type = st.session_state[f"Flight Type_{uid}"]
 
     leg["Flight Type"] = selected_type
+    leg["_eti_mode"] = "AUTO"
+    leg["_eti_manual_context"] = None
     leg["_scenic_warning"] = False
+
+    if selected_type != "Scenic":
+        st.session_state[f"Flight Minutes_{uid}"] = max(
+            1.0,
+            float(leg["Flight Minutes"]),
+        )
+
     apply_scenic_destination(leg)
     if selected_type == "Scenic":
         st.session_state[f"Destination_{uid}"] = leg["Destination"]
@@ -194,11 +238,19 @@ def _flight_type_changed(uid: str) -> None:
 def _duration_changed(uid: str) -> None:
     """Automatically convert invalid Scenic durations to Charter."""
 
-    leg = _find_leg(uid)
+    try:
+        leg = _find_leg(uid)
+    except ValueError as exc:
+        if str(exc).startswith("Unknown flight-leg editor ID:"):
+            return
+        raise
 
     minutes = float(st.session_state[f"Flight Minutes_{uid}"])
 
     leg["Flight Minutes"] = minutes
+    if leg["Flight Type"] != "Scenic":
+        leg["_eti_mode"] = "MANUAL"
+        leg["_eti_manual_context"] = leg.get("_eti_current_context")
 
     if leg["Flight Type"] == "Scenic" and minutes not in (15.0, 30.0):
         leg["Flight Type"] = "Charter"
@@ -227,7 +279,125 @@ def _prepare_leg_for_render(leg: dict, previous: dict | None) -> None:
         _sync_widget_value(uid, "ETD Time", leg["ETD Time"])
 
 
-def _render_leg(leg: dict, sequence: int) -> None:
+def _resolve_editor_eti(
+    leg: dict,
+    saved_locations: tuple,
+    groundspeed_knots: float,
+) -> None:
+    """Resolve ETI while preserving explicit manual overrides."""
+
+    if leg["Flight Type"] == "Scenic":
+        leg["_eti_origin"] = "SCHEDULED"
+        leg["_eti_auto_minutes"] = None
+        leg["_eti_review"] = False
+        return
+
+    locations = {location.location_id: location for location in saved_locations}
+
+    departure = locations.get(leg["Departure"])
+    destination = locations.get(leg["Destination"])
+
+    distance = None
+
+    if departure is not None and destination is not None:
+        distance = distance_nm(
+            departure.latitude,
+            departure.longitude,
+            destination.latitude,
+            destination.longitude,
+        )
+
+    # A zero-distance Charter/Ferry route has no usable automatic ETI.
+    if distance is not None and distance <= 0:
+        distance = None
+
+    context = (
+        leg["Departure"],
+        leg["Destination"],
+        float(groundspeed_knots),
+        ((departure.latitude, departure.longitude) if departure is not None else None),
+        (
+            (destination.latitude, destination.longitude)
+            if destination is not None
+            else None
+        ),
+    )
+
+    leg["_eti_current_context"] = context
+
+    if float(leg["Flight Minutes"]) < 1.0:
+        leg["Flight Minutes"] = 1.0
+
+    manual = leg.get("_eti_mode") == "MANUAL"
+
+    result = resolve_eti(
+        flight_type=leg["Flight Type"],
+        distance_nm=distance,
+        groundspeed_knots=groundspeed_knots,
+        manual_minutes=(float(leg["Flight Minutes"]) if manual else None),
+        route_changed=(manual and leg.get("_eti_manual_context") != context),
+    )
+
+    leg["_eti_origin"] = result.source.value
+    leg["_eti_auto_minutes"] = result.calculated_minutes
+    leg["_eti_review"] = result.requires_review
+
+    if result.source == ETISource.AUTO:
+        calculated = float(result.minutes)
+
+        if float(leg["Flight Minutes"]) != calculated:
+            leg["Flight Minutes"] = calculated
+
+            _sync_widget_value(
+                leg["_uid"],
+                "Flight Minutes",
+                calculated,
+            )
+
+
+def _reset_eti_to_auto(uid: str) -> None:
+    """Remove a manual ETI override."""
+
+    try:
+        leg = _find_leg(uid)
+    except ValueError as exc:
+        if str(exc).startswith("Unknown flight-leg editor ID:"):
+            return
+        raise
+
+    leg["_eti_mode"] = "AUTO"
+    leg["_eti_manual_context"] = None
+    leg["_eti_review"] = False
+
+
+def _set_scenic_duration(uid: str, minutes: int) -> None:
+    """Set a permitted Scenic duration directly from a button."""
+
+    if minutes not in (15, 30):
+        raise ValueError("Scenic duration must be 15 or 30 minutes.")
+
+    try:
+        leg = _find_leg(uid)
+    except ValueError as exc:
+        if str(exc).startswith("Unknown flight-leg editor ID:"):
+            return
+        raise
+
+    if leg["Flight Type"] != "Scenic":
+        return
+
+    leg["Flight Minutes"] = float(minutes)
+    leg["_eti_origin"] = "SCHEDULED"
+    leg["_eti_mode"] = "AUTO"
+    leg["_eti_manual_context"] = None
+    leg["_eti_review"] = False
+
+
+def _render_leg(
+    leg: dict,
+    sequence: int,
+    saved_locations: tuple,
+) -> None:
     """Render one editable flight-leg card."""
 
     uid = leg["_uid"]
@@ -270,26 +440,84 @@ def _render_leg(leg: dict, sequence: int) -> None:
                 on_change=_flight_type_changed,
                 args=(uid,),
             )
-
         with col2:
-            st.text_input(
-                "Departure",
-                value=leg["Departure"],
+            departure_options = location_options(
+                saved_locations,
+                leg["Departure"],
+            )
+
+            st.selectbox(
+                "Departure 🔗" if sequence > 1 else "Departure",
+                options=departure_options,
+                index=departure_options.index(leg["Departure"]),
+                format_func=lambda location_id: format_location_option(
+                    location_id,
+                    saved_locations,
+                ),
                 key=f"Departure_{uid}",
-                on_change=_update_field,
-                args=(uid, "Departure"),
+                disabled=sequence > 1,
+                on_change=(_update_field if sequence == 1 else None),
+                args=((uid, "Departure") if sequence == 1 else ()),
+                help=(
+                    "Automatically linked to the previous leg's destination."
+                    if sequence > 1
+                    else "Select the departure location."
+                ),
             )
 
         with col3:
-            st.text_input(
-                "Destination",
-                value=leg["Destination"],
-                key=f"Destination_{uid}",
-                disabled=leg["Flight Type"] == "Scenic",
-                help="Scenic flights return to the departure location.",
-                on_change=_update_field,
-                args=(uid, "Destination"),
+            destination_options = location_options(
+                saved_locations,
+                leg["Destination"],
             )
+
+            scenic = leg["Flight Type"] == "Scenic"
+
+            st.selectbox(
+                "Destination 🔗" if scenic else "Destination",
+                options=destination_options,
+                index=destination_options.index(leg["Destination"]),
+                format_func=lambda location_id: format_location_option(
+                    location_id,
+                    saved_locations,
+                ),
+                key=f"Destination_{uid}",
+                disabled=scenic,
+                on_change=None if scenic else _update_field,
+                args=() if scenic else (uid, "Destination"),
+                help=(
+                    "Scenic flights return to their departure location."
+                    if scenic
+                    else "Type a location name or identifier to search."
+                ),
+            )
+        new_departure_col, new_destination_col = st.columns(2)
+
+        with new_departure_col:
+            if st.button(
+                "➕ New Departure",
+                key=f"new_departure_{uid}",
+                use_container_width=True,
+                disabled=sequence > 1,
+                help=(
+                    "For subsequent legs, departure is automatically "
+                    "linked to the previous destination."
+                ),
+            ):
+                new_location_dialog(uid, "Departure")
+
+        with new_destination_col:
+            if st.button(
+                "➕ New Destination",
+                key=f"new_destination_{uid}",
+                use_container_width=True,
+                disabled=leg["Flight Type"] == "Scenic",
+                help=(
+                    "Scenic destinations are automatically linked to their departure."
+                ),
+            ):
+                new_location_dialog(uid, "Destination")
+
         st.markdown("#### Flight Timing")
         legs = st.session_state[EDITOR_STATE_KEY]
 
@@ -333,15 +561,102 @@ def _render_leg(leg: dict, sequence: int) -> None:
             )
 
         with timing_col3:
-            st.number_input(
-                "ETI (minutes)",
-                min_value=1.0,
-                step=1.0,
-                value=float(leg["Flight Minutes"]),
-                key=f"Flight Minutes_{uid}",
-                on_change=_duration_changed,
-                args=(uid,),
-            )
+            origin = leg.get("_eti_origin", "UNAVAILABLE")
+
+            if leg["Flight Type"] == "Scenic":
+                # Scenic durations are scheduled products, not route ETIs.
+                if float(leg["Flight Minutes"]) not in (15.0, 30.0):
+                    leg["Flight Minutes"] = 15.0
+
+                st.caption("🟣 SCHEDULED · Scenic duration")
+
+                scenic_15, scenic_30 = st.columns(2)
+
+                with scenic_15:
+                    st.button(
+                        "15 MIN",
+                        key=f"scenic_15_{uid}",
+                        type=(
+                            "primary" if leg["Flight Minutes"] == 15.0 else "secondary"
+                        ),
+                        on_click=_set_scenic_duration,
+                        args=(uid, 15),
+                        use_container_width=True,
+                    )
+
+                with scenic_30:
+                    st.button(
+                        "30 MIN",
+                        key=f"scenic_30_{uid}",
+                        type=(
+                            "primary" if leg["Flight Minutes"] == 30.0 else "secondary"
+                        ),
+                        on_click=_set_scenic_duration,
+                        args=(uid, 30),
+                        use_container_width=True,
+                    )
+
+            else:
+                if origin == "AUTO":
+                    st.caption("🔵 AUTO · Calculated")
+                elif origin == "MANUAL":
+                    if leg.get("_eti_review"):
+                        st.caption("🟠 MANUAL · ⚠️ REVIEW")
+                    else:
+                        st.caption("🟠 MANUAL · Override")
+                else:
+                    st.caption("⚪ NOT CALCULATED")
+
+                # Always normalise BEFORE creating the widget.
+                minutes = float(leg["Flight Minutes"])
+
+                if minutes < 1.0:
+                    minutes = 1.0
+                    leg["Flight Minutes"] = minutes
+
+                widget_key = f"Flight Minutes_{uid}"
+
+                if (
+                    widget_key not in st.session_state
+                    or float(st.session_state[widget_key]) < 1.0
+                ):
+                    st.session_state[widget_key] = minutes
+
+                # No value= argument: Session State owns this widget.
+                st.number_input(
+                    "ETI (minutes)",
+                    min_value=1.0,
+                    step=1.0,
+                    key=widget_key,
+                    on_change=_duration_changed,
+                    args=(uid,),
+                )
+
+                calculated = leg.get("_eti_auto_minutes")
+
+                if origin == "MANUAL":
+                    if calculated is not None:
+                        st.caption(f"Automatic estimate: {calculated:.0f} min")
+
+                    st.button(
+                        "↺ Reset to Auto",
+                        key=f"reset_eti_{uid}",
+                        on_click=_reset_eti_to_auto,
+                        args=(uid,),
+                        use_container_width=True,
+                    )
+
+                    if leg.get("_eti_review"):
+                        st.warning(
+                            "Route or planning speed changed after "
+                            "this ETI was manually entered. "
+                            "Review the duration or reset to Auto."
+                        )
+
+                elif origin == "AUTO":
+                    st.caption(
+                        "Updates when the route or planning groundspeed changes."
+                    )
 
         eta = calculate_eta(
             leg["ETD Date"],
@@ -378,6 +693,50 @@ def _render_leg(leg: dict, sequence: int) -> None:
             )
 
 
+def _apply_pending_location_selection() -> None:
+    """Apply a newly created location before rendering editor widgets."""
+
+    pending = st.session_state.pop(
+        PENDING_SELECTION_KEY,
+        None,
+    )
+
+    if not pending:
+        return
+
+    uid = pending["uid"]
+    field = pending["field"]
+    location_id = pending["location_id"]
+
+    if field not in ("Departure", "Destination"):
+        return
+
+    try:
+        leg = _find_leg(uid)
+    except ValueError as exc:
+        if str(exc).startswith("Unknown flight-leg editor ID:"):
+            return
+        raise
+
+    leg[field] = location_id
+
+    _sync_widget_value(
+        uid,
+        field,
+        location_id,
+    )
+
+    if field == "Departure":
+        apply_scenic_destination(leg)
+
+        if leg["Flight Type"] == "Scenic":
+            _sync_widget_value(
+                uid,
+                "Destination",
+                leg["Destination"],
+            )
+
+
 def render_flight_leg_editor(
     existing: pd.DataFrame,
 ) -> pd.DataFrame:
@@ -389,7 +748,12 @@ def render_flight_leg_editor(
     """
 
     _initialise_editor(existing)
-
+    _apply_pending_location_selection()
+    try:
+        saved_locations = load_location_choices()
+    except (OSError, ValueError) as error:
+        saved_locations = ()
+        st.warning(f"Saved locations unavailable: {error}")
     st.subheader("Flight Legs")
 
     st.caption(
@@ -401,7 +765,12 @@ def render_flight_leg_editor(
 
     for index, leg in enumerate(legs, start=1):
         _prepare_leg_for_render(leg, legs[index - 2] if index > 1 else None)
-        _render_leg(leg, index)
+        _resolve_editor_eti(
+            leg,
+            saved_locations,
+            float(st.session_state.get("flyops_map_cruise_speed", 100.0)),
+        )
+        _render_leg(leg, index, saved_locations)
 
     st.button(
         "➕ Add Flight Leg",
@@ -433,6 +802,9 @@ def render_flight_leg_editor(
                 "ETD Date": leg["ETD Date"].isoformat(),
                 "ETD Time": leg["ETD Time"].strftime("%H:%M"),
                 "ETI Minutes": leg["Flight Minutes"],
+                "ETI Source": leg.get("_eti_origin", "UNAVAILABLE"),
+                "Auto ETI Minutes": leg.get("_eti_auto_minutes"),
+                "ETI Review Required": leg.get("_eti_review", False),
                 "ETA": eta.isoformat(timespec="minutes"),
                 "Shutdown": leg["Shutdown"],
             }
@@ -448,6 +820,9 @@ def render_flight_leg_editor(
             "ETD Date",
             "ETD Time",
             "ETI Minutes",
+            "ETI Source",
+            "Auto ETI Minutes",
+            "ETI Review Required",
             "ETA",
             "Flight Minutes",
             "Additional Idle",
