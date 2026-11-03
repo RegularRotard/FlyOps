@@ -37,3 +37,9 @@ Thumbs.db
 
 # Generated reports and exported documents
 /output/
+
+# Windows download metadata
+*:Zone.Identifier
+
+# Extracted update packages
+flyops_phase*/
