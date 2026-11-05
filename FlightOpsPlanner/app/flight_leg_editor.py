@@ -27,6 +27,7 @@ from app.location_choices import (
     load_location_choices,
     location_options,
 )
+from app.manifest_ui import render_manifest_ui
 from app.new_location_dialog import (
     PENDING_SELECTION_KEY,
     new_location_dialog,
@@ -1052,6 +1053,8 @@ def render_flight_leg_editor(
         on_duplicate=_duplicate_leg,
         on_move=_move_leg,
     )
+
+    render_manifest_ui(legs)
 
     compact_mode = st.toggle(
         "Compact leg editor",

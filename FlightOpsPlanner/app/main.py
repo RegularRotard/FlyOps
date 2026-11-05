@@ -13,6 +13,7 @@ from app.aircraft_catalog import (
     list_aircraft,
     list_aircraft_revisions,
 )
+from app.aircraft_loading_panel import render_aircraft_loading_panel
 from app.flight_leg_editor import render_flight_leg_editor
 from app.flight_plan_map import render_flight_plan_map
 from app.location_manager import render_location_manager
@@ -266,6 +267,13 @@ if page == "Flight Planning":
     edited = render_flight_leg_editor(st.session_state.flight_legs)
 
     st.session_state.flight_legs = edited
+
+    st.divider()
+
+    render_aircraft_loading_panel(
+        selected_aircraft,
+        selected_revision,
+    )
 
     st.divider()
     render_flight_plan_map(edited)

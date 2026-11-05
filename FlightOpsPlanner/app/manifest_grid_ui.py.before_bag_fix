@@ -1,0 +1,433 @@
+"""Fast AG Grid entry for passengers, baggage and independent cargo."""
+
+from uuid import uuid4
+
+import pandas as pd
+import streamlit as st
+
+from app.manifest_grid import (
+    build_manifest_rows,
+    render_manifest_grid,
+)
+from app.manifest_grid_service import (
+    ManifestGridError,
+    apply_grid_edits,
+)
+from app.manifest_live import (
+    remove_baggage,
+    remove_passenger,
+)
+from flightops.operations.manifests.models import (
+    BaggageItem,
+    Passenger,
+)
+
+PASSENGERS = "flyops_manifest_passengers"
+BAGGAGE = "flyops_manifest_baggage"
+ASSIGNMENTS = "flyops_manifest_assignments"
+LOADING = "flyops_leg_station_assignments"
+
+ASSIGNMENT_VERSION = "flyops_manifest_assignment_version"
+LOADING_VERSION = "flyops_loading_widget_version"
+
+DRAFTS = "flyops_grid_drafts"
+SELECTED = "flyops_grid_selected_id"
+GRID_VERSION = "flyops_grid_version"
+
+BAGGAGE_OVERRIDES = "flyops_baggage_leg_overrides"
+
+
+def _initialise() -> None:
+    state = st.session_state
+
+    state.setdefault(PASSENGERS, {})
+    state.setdefault(BAGGAGE, {})
+    state.setdefault(ASSIGNMENTS, {})
+    state.setdefault(LOADING, {})
+
+    state.setdefault(DRAFTS, {})
+    state.setdefault(SELECTED, None)
+    state.setdefault(GRID_VERSION, 0)
+
+    state.setdefault(ASSIGNMENT_VERSION, 0)
+    state.setdefault(LOADING_VERSION, 0)
+
+
+def _refresh_structure() -> None:
+    """Force the grid to rebuild after adding or deleting records."""
+
+    st.session_state[GRID_VERSION] += 1
+
+
+def _refresh_assignment_widgets() -> None:
+    """Prevent stale selectors from restoring deleted records."""
+
+    state = st.session_state
+
+    state[ASSIGNMENT_VERSION] += 1
+    state[LOADING_VERSION] += 1
+
+
+def _add_draft(record_type: str, owner_id: str | None = None) -> None:
+    """Add an editable row without creating an invalid saved record."""
+
+    record_id = uuid4().hex
+
+    st.session_state[DRAFTS][record_id] = {
+        "ID": record_id,
+        "Type": record_type,
+        "Description": "",
+        "Weight (kg)": None,
+        "Owner ID": owner_id or "",
+    }
+
+    st.session_state[SELECTED] = record_id
+
+    _refresh_structure()
+
+
+def _selected_owner_id() -> str | None:
+    """Resolve the selected passenger, including selection of their bag."""
+
+    state = st.session_state
+    selected = state[SELECTED]
+
+    if selected in state[PASSENGERS]:
+        return selected
+
+    item = state[BAGGAGE].get(selected)
+
+    if item is not None:
+        return item.owner_passenger_id
+
+    return None
+
+
+def _add_passenger() -> None:
+    _add_draft("Passenger")
+
+
+def _add_bag() -> None:
+    owner_id = _selected_owner_id()
+
+    if owner_id is None:
+        st.warning("Select a passenger or one of their bags first.")
+        return
+
+    _add_draft("Bag", owner_id)
+
+
+def _add_cargo() -> None:
+    _add_draft("Cargo")
+
+
+def _clear_baggage_overrides(removed_ids: set[str]) -> None:
+    """Remove deleted baggage from manual flight-leg routing exceptions."""
+
+    overrides = st.session_state.get(BAGGAGE_OVERRIDES, {})
+
+    for leg in overrides.values():
+        for key in ("include", "exclude"):
+            leg.setdefault(key, set()).difference_update(removed_ids)
+
+
+def _delete_selected() -> None:
+    """Delete the selected record and its dependent assignments."""
+
+    state = st.session_state
+    record_id = state[SELECTED]
+
+    if not record_id:
+        return
+
+    if record_id in state[DRAFTS]:
+        del state[DRAFTS][record_id]
+
+    elif record_id in state[PASSENGERS]:
+        before_baggage = set(state[BAGGAGE])
+
+        (
+            state[PASSENGERS],
+            state[BAGGAGE],
+            state[ASSIGNMENTS],
+            state[LOADING],
+        ) = remove_passenger(
+            record_id,
+            state[PASSENGERS],
+            state[BAGGAGE],
+            state[ASSIGNMENTS],
+            state[LOADING],
+        )
+
+        deleted_baggage = before_baggage - set(state[BAGGAGE])
+
+        _clear_baggage_overrides(deleted_baggage)
+
+        # Any unsaved baggage drafts owned by this passenger
+        # must also be removed.
+        for draft_id, draft in list(state[DRAFTS].items()):
+            if draft.get("Owner ID") == record_id:
+                del state[DRAFTS][draft_id]
+
+        _refresh_assignment_widgets()
+
+    elif record_id in state[BAGGAGE]:
+        (
+            state[BAGGAGE],
+            state[ASSIGNMENTS],
+            state[LOADING],
+        ) = remove_baggage(
+            record_id,
+            state[BAGGAGE],
+            state[ASSIGNMENTS],
+            state[LOADING],
+            state[PASSENGERS],
+        )
+
+        _clear_baggage_overrides({record_id})
+        _refresh_assignment_widgets()
+
+    state[SELECTED] = None
+    _refresh_structure()
+
+
+def _rows_with_drafts() -> pd.DataFrame:
+    """Combine saved records and incomplete new rows."""
+
+    state = st.session_state
+
+    rows = build_manifest_rows(
+        state[PASSENGERS],
+        state[BAGGAGE],
+    )
+
+    drafts = list(state[DRAFTS].values())
+
+    if not drafts:
+        return rows
+
+    draft_rows = pd.DataFrame(
+        drafts,
+        columns=list(rows.columns),
+    )
+
+    # Place new drafts at the end of the grid.
+    return pd.concat(
+        [rows, draft_rows],
+        ignore_index=True,
+    )
+
+
+def _commit_grid_data(edited: pd.DataFrame) -> None:
+    """Atomically apply completed cell edits to the session registers."""
+
+    state = st.session_state
+
+    existing_ids = set(state[PASSENGERS]) | set(state[BAGGAGE])
+
+    existing_rows = edited[edited["ID"].isin(existing_ids)].copy()
+
+    result = apply_grid_edits(
+        existing_rows,
+        state[PASSENGERS],
+        state[BAGGAGE],
+    )
+
+    updated_passengers = dict(result.passengers)
+    updated_baggage = dict(result.baggage)
+
+    updated_drafts = dict(state[DRAFTS])
+
+    for _, row in edited.iterrows():
+        record_id = str(row["ID"])
+
+        if record_id not in updated_drafts:
+            continue
+
+        description = str(row.get("Description") or "").strip()
+
+        draft = dict(updated_drafts[record_id])
+
+        draft["Description"] = description
+
+        raw_weight = row.get("Weight (kg)")
+
+        if pd.isna(raw_weight) or raw_weight == "":
+            weight = None
+        else:
+            try:
+                weight = float(raw_weight)
+            except (ValueError, TypeError) as error:
+                raise ManifestGridError("Weight must be numeric.") from error
+
+            if not 0 <= weight < float("inf"):
+                raise ManifestGridError("Weight must be finite and nonnegative.")
+
+        draft["Weight (kg)"] = weight
+
+        if not description:
+            updated_drafts[record_id] = draft
+            continue
+
+        if draft["Type"] == "Passenger":
+            updated_passengers[record_id] = Passenger(
+                passenger_id=record_id,
+                name=description,
+                verified_weight=weight,
+            )
+
+        else:
+            owner_id = draft["Owner ID"] or None
+
+            if owner_id and owner_id not in updated_passengers:
+                raise ManifestGridError("Baggage owner does not exist.")
+
+            updated_baggage[record_id] = BaggageItem(
+                baggage_id=record_id,
+                description=description,
+                owner_passenger_id=owner_id,
+                verified_weight=weight,
+            )
+
+        del updated_drafts[record_id]
+
+    # Only replace Session State after every row validates.
+    state[PASSENGERS] = updated_passengers
+    state[BAGGAGE] = updated_baggage
+    state[DRAFTS] = updated_drafts
+
+
+def _update_selection(grid_result) -> None:
+    """Track the record selected in AG Grid."""
+
+    selected = grid_result.selected_rows
+
+    if selected is None:
+        st.session_state[SELECTED] = None
+        return
+
+    if isinstance(selected, pd.DataFrame):
+        if selected.empty:
+            st.session_state[SELECTED] = None
+            return
+
+        record_id = selected.iloc[0].get("ID")
+
+    elif isinstance(selected, list):
+        if not selected:
+            st.session_state[SELECTED] = None
+            return
+
+        record_id = selected[0].get("ID")
+
+    else:
+        return
+
+    if record_id is not None:
+        st.session_state[SELECTED] = str(record_id)
+
+
+def render_grid_manifest_register() -> None:
+    """Render the integrated, automatically saving manifest register."""
+
+    _initialise()
+
+    state = st.session_state
+
+    st.markdown("### 👥 Passengers & Baggage")
+
+    # Actions appear in one compact toolbar.
+    add_pax, add_bag, add_cargo, delete = st.columns([1.2, 1.2, 1.2, 1.5])
+
+    with add_pax:
+        if st.button(
+            "＋ Passenger",
+            use_container_width=True,
+        ):
+            _add_passenger()
+            st.rerun()
+
+    with add_bag:
+        if st.button(
+            "＋ Bag",
+            use_container_width=True,
+        ):
+            _add_bag()
+            st.rerun()
+
+    with add_cargo:
+        if st.button(
+            "＋ Cargo",
+            use_container_width=True,
+        ):
+            _add_cargo()
+            st.rerun()
+
+    with delete:
+        if st.button(
+            "🗑 Delete Selected",
+            use_container_width=True,
+            disabled=state[SELECTED] is None,
+        ):
+            _delete_selected()
+            st.rerun()
+
+    rows = _rows_with_drafts()
+
+    grid_result = render_manifest_grid(
+        rows,
+        key=f"flyops_integrated_manifest_grid_{state[GRID_VERSION]}",
+    )
+
+    _update_selection(grid_result)
+
+    edited = grid_result.data
+
+    if edited is not None:
+        edited = pd.DataFrame(edited)
+
+        try:
+            _commit_grid_data(edited)
+
+        except (ManifestGridError, ValueError) as error:
+            st.error(f"Manifest edit rejected: {error}")
+
+    passenger_count = len(state[PASSENGERS])
+
+    baggage_count = sum(
+        item.owner_passenger_id is not None for item in state[BAGGAGE].values()
+    )
+
+    cargo_count = sum(
+        item.owner_passenger_id is None for item in state[BAGGAGE].values()
+    )
+
+    known_weights = [
+        record.effective_weight_kg
+        for record in (
+            *state[PASSENGERS].values(),
+            *state[BAGGAGE].values(),
+        )
+        if record.effective_weight_kg is not None
+    ]
+
+    missing_count = sum(
+        record.effective_weight_kg is None
+        for record in (
+            *state[PASSENGERS].values(),
+            *state[BAGGAGE].values(),
+        )
+    )
+
+    st.caption(
+        f"{passenger_count} passengers  ·  "
+        f"{baggage_count} bags  ·  "
+        f"{cargo_count} cargo items  ·  "
+        f"Known weight: {sum(known_weights):.1f} kg"
+    )
+
+    if missing_count:
+        st.warning(
+            f"{missing_count} record(s) have no weight. "
+            "Their loads cannot be treated as complete."
+        )
